@@ -8,7 +8,7 @@ slightly awful about it.
 
 ## Config DAT file dump format
 
-This work extends on [Arne Janessen's work](https://johannessen.github.io/hx870/).
+This work extends on [Arne Johannessen's work](https://johannessen.github.io/hx870/).
 It is still incomplete and currently only documented in form of a
 [010 Editor template](hx870dat.bt).
 
