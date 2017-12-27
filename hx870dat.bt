@@ -1,0 +1,425 @@
+//------------------------------------------------
+//--- 010 Editor v8.0 Binary Template
+//
+//      File: hx870dat.bt
+//   Authors: Christiane Ruetten
+//    E-Mail: cr@23bit.net
+//   Version: 0.1a
+//   Purpose: Parsing Standard Horizon HX870 DAT files
+//  Category: HF Radio
+// File Mask: *.dat
+//  ID Bytes: 03 67 01 00 00 00 00 00
+//   History: Based on https://johannessen.github.io/hx870/
+//------------------------------------------------
+
+if (FileSize() != 1<<15) {
+    Printf("Invalid file size\n");
+    return 1;
+}
+
+BigEndian();
+
+// Magic Bytes -----------------------------------
+FSeek(0x0000);
+uint16 MagicPrefix <bgcolor=0xff00cc00>;  // always 0x0361 (871)
+
+
+// 0002 Radio Status -----------------------------
+FSeek(0x0002);
+struct _RadioStatus {  // start: 0002
+    ubyte _unknown0002[6] <format=hex, bgcolor=cBlack>;  // always 01 00 00 00 00 00
+    ubyte SelectedChannelGroup;
+    ubyte _unknown0009 <format=hex, bgcolor=cBlack>;  // always 0e
+    ubyte _unknown000a <format=hex, bgcolor=cBlack>;  // always 02
+    ubyte _unknown000b <format=hex, bgcolor=cBlack>;  // always 02
+    ubyte VolumeSetting;  // 16 steps
+    ubyte SquelchSetting;  // 16 steps 
+    ubyte DistressAlertStatusMaybe;  // always 00
+    ubyte _unknown000f <format=hex, bgcolor=cBlack>;  // always 00
+    uint16 SelectedChannel;
+    uint16 SelectedChannelCopy;
+    ubyte _unknown0014 <format=hex, bgcolor=cBlack>;  // always f0
+    ubyte _unknown0015 <format=hex, bgcolor=cBlack>;  // values seen: 01, 04
+    // ubyte padding0016[10] <format=hex>;  // always ff
+} RadioStatus <bgcolor=0xffff0000>;
+
+
+// 0020 Radio Configuration ----------------------
+FSeek(0x0020);
+
+enum <ubyte> _OffOn { OFF, ON };'
+struct _GroupChannelSetup {
+    ubyte DefaultMaybe;
+    ubyte Channel;  // Used as index into channel list 
+};
+enum <ubyte> _MultiWatch { MW_DUAL, MW_TRIPLE };
+enum <ubyte> _ScanType { ST_MEMORY, ST_PRIORITY };
+enum <ubyte> _EmergencyLED { EL_CONTINUOUS, EL_SOS, EL_BLINK1, EL_BLINK2, EL_BLINK3 };
+enum <ubyte> _WaterHazardLED { WH_OFF, WH_ON, WH_ON_POWER_ON };
+enum <ubyte> _Lamp { L_OFF, L_3S, L_5S, L_10S, L_20S, L_30S, L_CONTINUOUS };
+enum <ubyte> _AFPitchCONT { A_NORMAL, A_HIGH_LOW_CUT, A_HIGH_LOW_BOOST, A_LOW_BOOST, A_HIGH_BOOST };
+enum <ubyte> _BatterySave { BS_OFF, BS_50, BS_70, BS_80, BS_90 };
+enum <ubyte> _VOXDelayTime { V_0_5S, V_1S, V_1_5S, V_2S, V_3S };
+enum <ubyte> _WPDisplayRange { W_AUTO, W_2NM, W_5NM, W_10NM, W_25NM };
+enum <ubyte> _WPArrivalRange { WA_0_05NM, WA_0_1NM, WA_0_2NM, WA_0_5NM, WA_1NM };
+enum <ubyte> _WPRoutingOperation { WR_AUTO, WR_MANUAL };
+
+struct _RadioConfiguration {  // start: 0020
+    _GroupChannelSetup PriorityChannels[3] <format=hex>;  //
+    _GroupChannelSetup SubChannels[3] <format=hex>;
+    ubyte _unused002c[3] <format=hex>;  // always ff
+    ubyte _unknown002f <format=hex, bgcolor=cBlack>;  // always 02
+
+    ubyte Dimmer;  // 0..5
+    ubyte Contrast;  // 0..30
+    ubyte KeyBeep;  // 0..5 volume
+    ubyte _unknown0033 <format=hex, bgcolor=cBlack>;  // always 01
+
+    // Channels Setup
+    _MultiWatch MultiWatch;  // 0=dual, 1=triple
+    ubyte _unknown0035 <format=hex, bgcolor=cBlack>; // always 01
+    _ScanType ScanType;
+    ubyte ScanResumeTime;  // 1..5 seconds
+    _OffOn WeatherAlert;
+    ubyte _unknown0039 <format=hex, bgcolor=cBlack>;  // always 00
+
+    // Configuration
+    _EmergencyLED EmergencyLED;
+    _WaterHazardLED WaterHazardLED;
+    _Lamp Lamp;
+    _AFPitchCONT AFPitchCONT;
+    _BatterySave BatterySave;
+    ubyte _unused003f <format=hex>;  // always ff
+
+    // Channels Setup continued
+    _OffOn VOX;
+    ubyte VOXLevel;  // 0..4
+    ubyte _unknown0044 <format=hex, bgcolor=cBlack>;  // always 00
+    _VOXDelayTime VOXDelayTime;
+    _OffOn NoiseCancelRx;
+    _OffOn NoiseCancelTx;
+    ubyte _unknown0046 <format=hex, bgcolor=cBlack>;  // always 00 
+    ubyte _unused0047[3] <format=hex>;  // always ff
+
+    // Waypoint Setup
+    _WPDisplayRange WPDisplayRange;
+    ubyte _unused004b <format=hex>;  // always ff
+    _WPArrivalRange WPArrivalRange;
+    _WPRoutingOperation WPRoutingOperation;
+    // ubyte _unused004e[2] <format=hex>;  // always ff
+} RadioConfiguration <bgcolor=0xffcccc00>;
+
+
+// 0050 GPS Settings -----------------------------
+FSeek(0x0050);
+
+enum <ubyte> _GPSPower { GP_OFF, GP_ON, GP_INT_PWR_OFF };
+enum <ubyte> _GPSPowerSave { GS_OFF, GS_AUTO, GS_50, GS_75, GS_90 };
+enum <ubyte> _GPSLocationFormat { G_DDD_MM_SS, G_DDD_MM_MM, G_DDD_MM_MMMM }; 
+struct _GPSTimeFormat {
+    ubyte Area: 1;  // 0=UTC, 1=Local
+    ubyte Format: 1;  // 0=12h, 1=24h
+    ubyte OffsetSign: 1;  // 0=negative, 1=positive
+    ubyte OffsetHalfHours: 5;  // Number of half hours
+};
+enum <ubyte> _GPSSpeed { G_KTS, G_MPH, G_KMH };
+enum <ubyte> _GPSDistance { G_NM, G_SM, G_KM };
+enum <ubyte> _GPSAltitude { G_FEET, G_METER };
+enum <ubyte> _GPSLoggerInterval { GI_5S, GI_15S, GI_30S, GI_1M, GI_5M };
+enum <ubyte> _GPSDirection { G_NORTH_UP, G_COURSE_UP };
+struct _GPSOutputSentences {
+    ubyte _unused: 2;  // 0x80..0x40
+    ubyte DSCDSE: 1;
+    ubyte RMC: 1;
+    ubyte GSV: 1;
+    ubyte GSA: 1;
+    ubyte GGA: 1;
+    ubyte GLL: 1;  // 0x01
+};
+
+struct _GPSSettings {  // start: 0050
+    _GPSPower GPSPower;
+    _GPSPowerSave GPSPowerSave;
+    _GPSLocationFormat GPSLocationFormat;
+    _GPSTimeFormat GPSTimeFormat;
+    _GPSSpeed GPSSpeed;
+    _GPSDistance GPSDistance;
+    _GPSAltitude GPSAltitude;
+    _OffOn GPSPinning;
+    _OffOn GPSDifferential;
+    _GPSDirection GPSDirection;
+    _GPSOutputSentences GPSOutputSentences;
+    _GPSLoggerInterval GPSLoggerInterval;
+    ubyte _unknown005c <format=hex, bgcolor=cBlack>;  // always 00
+    //  byte _unused005d[3];  // always ff
+} GPSSettings <bgcolor=0xff0000ff>;
+
+
+// 0060 Softkey Settings -------------------------
+FSeek(0x0060);
+
+enum <ubyte> _Softkey {
+    SK_NONE, SK_H_M_L, SK_WX_CH, SK_SCAN, SK_DUAL_WATCH, SK_WPT_MARK,
+    SK_COMPASS, SK_WAYPOINT, SK_MOB, SK_SCAN_MEM, SK_PRESET, SK_STROBE,
+    SK_CH_NAME, SK_LOGGER, SK_NOISE_CANCEL
+};
+enum <ubyte> _SoftkeyTimer { SK_3S = 1, SK_5S, SK_7S, SK_10S, SK_15S };
+
+struct _SoftkeySettings {  // start: 0060
+    ubyte ActiveSoftkeyPage;  // 00..04
+    _SoftkeyTimer SoftkeyTimer; 
+    _Softkey Softkeys[3*4] <format=hex>;  // 4 groups of 3 keys, 0=none
+    // byte _padding006e[2] <format=hex>;  // always ff ff
+} SoftkeySettings <bgcolor=0xffcc00cc>;
+
+
+// 0070 Channel Group Definitions ----------------
+FSeek(0x0070);
+
+struct _ChannelGroupDefinition {
+    _OffOn GroupEnabled;
+    _OffOn _unknownEnabled <bgcolor=cBlack>;
+    _OffOn ATISEnabled;  // 01 in group 4 enables YCE15 ATIS Setup 
+    char GroupName[4];  // padded with ff
+    ubyte _padding <format=hex>;  // always ff
+    char ModelStringMaybe[8];  // padded with ff
+} ChannelGroups[4] <bgcolor=0xffff0000>;
+
+
+// 00b0 DSC Settings -----------------------------
+FSeek(0x00b0);
+
+enum <ubyte> _ProgState { PRG_UNSET, PRG_SET, PRG_LOCK_MAYBE };
+struct _BeepSettings {
+    ubyte Individual: 1;  // 0x80
+    ubyte AllShips: 1;
+    ubyte Group: 1;
+    ubyte PositionRequest: 1;
+    ubyte PositionReport: 1;
+    ubyte Geographic: 1;
+    ubyte Polling: 1;
+    ubyte TestCall: 1;  // 0x01
+};
+struct _ReplySettings {
+    ubyte IndividualReplyAuto: 1;  // 0x80
+    ubyte IndividualACKAble: 1;
+    ubyte POSReplyAuto: 1;
+    ubyte _unknown: 5;  // 0x10..0x01
+};
+enum <ubyte> _IndividualRing { IR_5S, IR_10S, IR_15S, IR_20S, IR_2M };
+enum <ubyte> _NoACTTimer { NA_1M, NA_3M, NA_5M, NA_10M, NA_15M };
+enum <ubyte> _CHSwitchTimer { CST_OFF, CST_10S, CST_30S, CST_1M, CST_2M };
+enum <ubyte> _POSFixWait { PFW_15S, PFW_30S, PFW_1M, PFW_1_5M, PFW_2M };
+enum <ubyte> _AutoPOSPolling { APP_REQUEST, APP_REPORT };
+enum <ubyte> _AutoPOSTime { APT_30S, APT_1M, APT_2M, APT_3M, APT_5M };
+enum <ubyte> _GMInterval { GM_1M, GM_3M, GM_5M, GM_10M, GM_15M };
+
+struct _DSCSettings {  // start: 00b0
+    ubyte MMSIBCD[5] <format=hex>;  // BCD format, last digit always 0, ff if none
+    _ProgState MMSIStatus;  // values seen: 00, 01, 02
+    ubyte ATISBCD[5] <format=hex>;  // BCD format, ff if none
+    _ProgState ATISStatus;  // 0=unset, 1=set
+    ubyte _unknown00bc[4] <format=hex, bgcolor=cBlack>;  // always 01 1f 6f 1f
+
+    ubyte _unknown00c0[5] <format=hex, bgcolor=cBlack>;  // always 2f 2f 2f 5c 78
+    _BeepSettings BeepSettings;
+    ubyte _unknown00c6 <format=hex, bgcolor=cBlack>;  // always 04
+    _IndividualRing IndividualRing;
+    _NoACTTimer NoACTTimer;
+    _CHSwitchTimer CHSwitchTimer;
+    _POSFixWait POSFixWait;
+    ubyte _unknown00cb[5] <format=hex, bgcolor=cBlack>; // always ff 01 ff 00 00
+
+    ubyte _unused00d0[16] <format=hex>;  // always ff
+
+    ubyte _unknown00e0 <format=hex, bgcolor=cBlack>;  // always 00
+    _AutoPOSPolling AutoPOSPolling;
+    _AutoPOSTime AutoPOSTime;
+    ubyte _unknown00e3 <format=hex, bgcolor=cBlack>;  // always 02
+    ubyte _unknown00e4 <format=hex, bgcolor=cBlack>;  // always 00
+    ubyte _unknown00e5 <format=hex, bgcolor=cBlack>;  // HX870: 46, HX870E: 8c
+    ubyte _unknown00e6 <format=hex, bgcolor=cBlack>;  // HX870: 30, HX870E: ff
+    ubyte _unused00e7[9] <format=hex>;  // always ff
+
+    ubyte _unknown00f0 <format=hex, bgcolor=cBlack>;  // always 00
+    ubyte _unknown00f1 <format=hex, bgcolor=cBlack>;  // always 02
+    _GMInterval GMInterval;
+    ubyte _unknown00f3 <bgcolor=cBlack>;  // always ff
+    ubyte _unknown00f4 <bgcolor=cBlack>;  // always 00
+    ubyte _unknown00f5 <format=hex, bgcolor=cBlack>;  // HX870: 46, HX870E: 8c
+    ubyte _unknown00f6 <format=hex, bgcolor=cBlack>;  // HX870: 30, HX870E: ff
+    ubyte _padding00f7[9] <format=hex>;  // always ff
+} DSCSettings <bgcolor=0xffcccc00>;
+
+
+// 0100 FlashID ----------------------------------
+FSeek(0x0100);
+char FlashID[10] <bgcolor=0xff00ff00>;  // "AM057N2" or "AM057N"
+
+
+// 010f Region Code ------------------------------
+FSeek(0x010f);
+
+enum <ubyte> {
+    RC_CANADA = 0,  // INTERNATIONAL,CAN
+    RC_BRITISH_ISLES,  // UNITED KINGDON, UK
+    RC_NORTH_SEA_BELGIUM,  // BELGIUM, BE
+    RC_NORTH_SEA_NETHERLANDS,  // NETHERLAND, NL
+    RC_NORTHERN_EUROPE,  // SWEDEN, SW
+    RC_EUROPEAN_INLAND,  // GERMANY, GRMN
+    RC_DISABLED = 0xff  // HX870 model
+} RegionCode <bgcolor=0xff00ffff>;
+
+
+// 0120 Channel Enabled Group --------------------
+FSeek(0x0120);
+
+struct _ChannelEnabledGroup {
+    uint64 Enabled[4] <format=binary>;
+};
+
+_ChannelEnabledGroup ChannelGroup1 <format=binary>;
+_ChannelEnabledGroup ChannelGroup2 <format=binary>;
+_ChannelEnabledGroup ChannelGroup3 <format=binary>;
+uint16 ChannelWxGroup <format=binary>;
+uint16 ChannelRgGroup <format=binary>;
+ubyte ChannelExpGroup[3] <format=binary>;
+// ubyte _padding0187[9];  // always ff
+
+
+// 0190 Scan Memory Groups -----------------------
+FSeek(0x0190);
+
+_ChannelEnabledGroup ScanMemGroup1 <format=binary>;
+_ChannelEnabledGroup ScanMemGroup2 <format=binary>;
+_ChannelEnabledGroup ScanMemGroup3 <format=binary>;
+uint16 ScanMemWxGroup <format=binary>;
+uint16 ScanMemRgGroup <format=binary>;
+ubyte ScanMemExpGroup[3] <format=binary>;
+// ubyte _padding01f7[9];  // always ff
+
+
+// 0200 Channel Preset ---------------------------
+FSeek(0x0200);
+
+enum <ubyte> _ChannelState { PR_USED, PR_UNUSED };
+struct _ChannelPreset {
+    _ChannelState State;
+    ubyte Index;  // 1-based index for channel list (followed by RG + EXP )
+};
+
+_ChannelPreset PresetListGroup1[10];
+// ubyte _padding0214[9];  // always ff
+_ChannelPreset PresetListGroup2[10];
+// ubyte _padding0234[9];  // always ff
+_ChannelPreset PresetListGroup3[10];
+// ubyte _padding0254[9];  // always ff
+
+
+// 0600 Marine Channel Definitions ---------------
+FSeek(0x0600);
+
+struct _MarineChannelFlags {
+    ubyte FreqShiftRxOnly: 1;  // 0x8000
+    ubyte FreqShiftRxTx: 1;
+    ubyte HighPowerAllowed: 1;
+    ubyte TxAllowed: 1;
+    ubyte LowPowerDefault: 1;
+    ubyte _unknown: 1;
+    ubyte ChannelSuffixB: 1;
+    ubyte ChannelSuffixA: 1;
+    ubyte DSCShipShip: 1;
+    ubyte ChannelPrefix: 7;  // 00..7e: numeric, 7f: none
+    ubyte _unused;  // always ff
+};
+struct _MarineChannel {
+    ubyte ID;
+    _MarineChannelFlags Flags;
+};
+
+_MarineChannel MarineChannelGroup1[96] <bgcolor=0xffcccccc>;
+_MarineChannel MarineChannelGroup2[96] <bgcolor=0xffff0000>;
+_MarineChannel MarineChannelGroup3[96] <bgcolor=0xffcccc00>;
+
+
+// 0aa0 Private Channel Definitions --------------
+FSeek(0x0aa0);
+
+struct _PrivateChannelFlags {
+    BitfieldDisablePadding();
+    uint32 RxFreqBCD: 20 <format=hex, comment="In kHz above 100 MHz">;
+    ubyte _unused: 4;  // always 0 when used
+    uint32 TxFreqBCD: 20 <format=hex, comment="In kHz above 100 MHz, fffff when TX disabled">;
+    ubyte LowPower: 1;
+    ubyte _unknown: 2;
+    ubyte HighPowerAllowedMaybe: 1;
+    BitfieldEnablePadding();
+};
+struct _PrivateChannel {
+    char ID[2] <comment="Must be uppercase">;
+    _PrivateChannelFlags Flags;
+};
+
+_PrivateChannel RegionalChannelGroup[12] <bgcolor=0xff00ff00, optimize=false>;
+_PrivateChannel ExpansionChannelGroup[20] <bgcolor=0xff00cccc, optimize=false>;
+
+
+// 0ba0 Channel Names Groups ---------------------
+struct _ChannelName {
+    char Name[16] <comment="Padded with 0xff">;
+};
+
+FSeek(0x0ba0);
+_ChannelName ChannelNamesGroup1[96] <bgcolor=0xffcccccc>;
+
+FSeek(0x17a0);
+_ChannelName ChannelNamesGroup2[96] <bgcolor=0xffff0000>;
+
+FSeek(0x23a0);
+_ChannelName ChannelNamesGroup3[96] <bgcolor=0xffcccc00>;
+
+FSeek(0x2fa0);
+_ChannelName ChannelNamesRegionalGroup[12] <bgcolor=0xff00ff00>;
+
+FSeek(0x3120);
+_ChannelName ChannelNamesExpansionGroup[20] <bgcolor=0xff00cccc>;
+
+FSeek(0x33c0);
+_ChannelName ChannelNamesWxGroup[10] <bgcolor=0xff0000ff>;
+
+
+// -----------------------------------------------
+// -----------------------------------------------
+// -----------------------------------------------
+// -----------------------------------------------
+/*
+FSeek(0x0);
+
+typedef ubyte _T_MMID_BCD[5] <format=hex, comment="BCD-encoded with last nibble always 0">;
+struct _S_MMID_BCD {  // Workaround for avoiding multi-dimensional arrays
+    _T_MMID_BCD ID;
+};
+struct _GMMemberTriple {
+    _S_MMID_BCD Members[3];
+    ubyte _padding1;  // always ff
+};
+struct _GroupMonitor {
+    _T_MMID_BCD MMID;  // BCD-encoded, last nibble zero
+    char Name[11];  // padded with ff
+    _GMMemberTriple MemberTriples[3];
+};
+*/
+// -----------------------------------------------
+// -----------------------------------------------
+// -----------------------------------------------
+// -----------------------------------------------
+// -----------------------------------------------
+
+// Magic Bytes -----------------------------------
+FSeek(0x7ffe);
+uint16 MagicSuffix <bgcolor=0xff00cc00>;  // always 0x0361 (871)
+
+if (MagicPrefix != 871 || MagicSuffix != 871) {
+    Printf("Invalid HX870 config flash magic.\n");
+    return 1;
+}
