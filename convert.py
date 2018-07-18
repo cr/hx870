@@ -58,7 +58,7 @@ if mode == "print":
     for dev, direction, string in protocol:
         print("%s %s%s" % (dev, "> " if direction == "0" else "  < ", repr(string)[1:-1]))
 
-elif mode == "extract":
+elif mode == "dump":
     start_address = None
     prev_address = None
     for dev, direction, string in protocol:
