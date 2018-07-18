@@ -4,11 +4,11 @@
 //      File: hx870dat.bt
 //   Authors: Christiane Ruetten
 //    E-Mail: cr@23bit.net
-//   Version: 0.1a
+//   Version: 0.1.1a
 //   Purpose: Parsing Standard Horizon HX870 DAT files
 //  Category: HF Radio
 // File Mask: *.dat
-//  ID Bytes: 03 67 01 00 00 00 00 00
+//  ID Bytes: 03 67
 //   History: Based on https://johannessen.github.io/hx870/
 //------------------------------------------------
 
@@ -21,7 +21,7 @@ BigEndian();
 
 // Magic Bytes -----------------------------------
 FSeek(0x0000);
-uint16 MagicPrefix <bgcolor=0xff00cc00>;  // always 0x0361 (871)
+uint16 MagicPrefix <bgcolor=0xff00cc00>;  // always 0x0367 (871)
 
 
 // 0002 Radio Status -----------------------------
@@ -56,7 +56,7 @@ enum <ubyte> _MultiWatch { MW_DUAL, MW_TRIPLE };
 enum <ubyte> _ScanType { ST_MEMORY, ST_PRIORITY };
 enum <ubyte> _EmergencyLED { EL_CONTINUOUS, EL_SOS, EL_BLINK1, EL_BLINK2, EL_BLINK3 };
 enum <ubyte> _WaterHazardLED { WH_OFF, WH_ON, WH_ON_POWER_ON };
-enum <ubyte> _Lamp { L_OFF, L_3S, L_5S, L_10S, L_20S, L_30S, L_CONTINUOUS };
+enum <ubyte> _Lamp { L_OFF, L_3S, L_5S, L_10S, L_CONTINUOUS, L_20S, L_30S };
 enum <ubyte> _AFPitchCONT { A_NORMAL, A_HIGH_LOW_CUT, A_HIGH_LOW_BOOST, A_LOW_BOOST, A_HIGH_BOOST };
 enum <ubyte> _BatterySave { BS_OFF, BS_50, BS_70, BS_80, BS_90 };
 enum <ubyte> _VOXDelayTime { V_0_5S, V_1S, V_1_5S, V_2S, V_3S };
@@ -94,9 +94,9 @@ struct _RadioConfiguration {  // start: 0020
     // Channels Setup continued
     _OffOn VOX;
     ubyte VOXLevel;  // 0..4
-    ubyte _unknown0044 <format=hex, bgcolor=cBlack>;  // always 00
     _VOXDelayTime VOXDelayTime;
     _OffOn NoiseCancelRx;
+    ubyte NoiseCancelRxLevel;  // 0..3
     _OffOn NoiseCancelTx;
     ubyte _unknown0046 <format=hex, bgcolor=cBlack>;  // always 00 
     ubyte _unused0047[3] <format=hex>;  // always ff
