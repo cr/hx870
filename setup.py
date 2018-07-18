@@ -43,8 +43,8 @@ setup(
               'hx890', 'hx890e', 'firmware', 'flashing', 'mmsi', 'atis'],
     author='Christiane Ruetten',
     author_email='cr@23bit.net',
-    url='https://github.com/cr/pyhx870',
-    download_url='https://github.com/cr/pyhx870/archive/master.tar.gz',
+    url='https://github.com/cr/hx870',
+    download_url='https://github.com/cr/hx870/archive/master.tar.gz',
     license='GPLv3',
     packages=find_packages(exclude=["tests"]),
     include_package_data=True,  # See MANIFEST.in
