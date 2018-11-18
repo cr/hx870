@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 PACKAGE_NAME = 'pyhx870'
-PACKAGE_VERSION = '0.0.1a'
+PACKAGE_VERSION = '0.1.0a'
 
 INSTALL_REQUIRES = [
     'coloredlogs',
@@ -14,21 +14,21 @@ INSTALL_REQUIRES = [
 
 TESTS_REQUIRE = [
     'coverage',
-    'nose',
-    'mock'
+    'mock',
+    'pytest'
 ]
 
 DEV_REQUIRES = [
     'coverage',
-    'nose',
     'mock',
-    'pep8'
+    'pycodestyle',
+    'pytest'
 ]
 
 setup(
     name=PACKAGE_NAME,
     version=PACKAGE_VERSION,
-    description='Tool for HX870 flashing and configuration',
+    description='Tool for Yaesu HX870 flashing and configuration',
     classifiers=[
         'Environment :: Console',
         'Development Status :: 3 - Alpha',

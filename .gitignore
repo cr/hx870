@@ -1,0 +1,8 @@
+*.pyc
+HX870
+doc
+.idea
+*.egg-info
+venv
+Pipfile
+Pipfile.lock
