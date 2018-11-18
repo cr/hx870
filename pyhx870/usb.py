@@ -38,7 +38,7 @@ class HX870USB(object):
     @classmethod
     def find(cls, cid=0):
         """
-                Return the USB device object of the HX870 designated by CID.
+        Return the USB device object of the HX870 designated by CID.
         Returns None if the CID is not found.
 
 
