@@ -4,7 +4,7 @@ import logging
 import time
 
 from .base import CliCommand
-import pyhx870
+from ..device import enumerate
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +15,13 @@ class NmeaCommand(CliCommand):
     help = "dump NMEA live data"
 
     def run(self):
-        hx = pyhx870.get(self.args)
-        if hx is None:
-            logger.error("No HX870 connected")
+
+        try:
+            hx = enumerate(force_device=self.args.tty, force_model=self.args.model)[0]
+        except IndexError:
+            logger.critical("No device to work with")
             return 10
+
         hx.init()
         if hx.cp_mode:
             logger.error("Handset in CP mode, reboot to regular mode")

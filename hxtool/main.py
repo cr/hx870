@@ -23,18 +23,24 @@ def get_args(argv=None):
     if argv is None:
         argv = sys.argv[1:]
 
-    pkg_version = pkgr.require("pyhx870")[0].version
+    pkg_version = pkgr.require("hxtool")[0].version
 
-    parser = argparse.ArgumentParser(prog="pyhx870")
+    parser = argparse.ArgumentParser(prog="hxtool")
     parser.add_argument("--version", action="version", version="%(prog)s " + pkg_version)
 
-    parser.add_argument("-d", "--debug",
+    parser.add_argument("--debug",
                         help="enable debug logging",
                         action="store_true")
 
     parser.add_argument("-t", "--tty",
-                        help="force path to tty device",
+                        help="force path or port for serial device",
                         type=os.path.abspath,
+                        action="store")
+
+    parser.add_argument("-m", "--model",
+                        help="force device model",
+                        type=str.upper,
+                        choices=["HX870", "HX890"],
                         action="store")
 
     # Set up subparsers, one for each command
@@ -70,7 +76,7 @@ def main():
         return 5
 
     except OSError as e:
-        logger.critical("Connection lost")
+        logger.critical(f"Connection lost ({e})")
         return 10
 
     if result != 0:

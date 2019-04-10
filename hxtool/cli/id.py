@@ -3,7 +3,7 @@
 import logging
 
 from .base import CliCommand
-import pyhx870
+import hxtool
 from ..protocol import ProtocolError
 
 logger = logging.getLogger(__name__)
@@ -32,20 +32,18 @@ class IdCommand(CliCommand):
                             action="store_true")
 
     def run(self):
-        hx = pyhx870.get(self.args)
+        hx = hxtool.get(self.args)
         if hx is None:
-            logger.critical("No HX870 connected")
+            logger.error("No device detected. Connect device or specify --tty")
             return 10
-        hx.init()
-        try:
-            _ = hx.get_firmware_version()
-        except ProtocolError:
+
+        if not hx.comm.cp_mode:
             logger.critical("Handset not in CP mode (MENU + ON)")
             return 11
 
         if self.args.atis is None and self.args.mmsi is None and not self.args.reset:
-            mmsi, mmsi_status = hx.read_mmsi()
-            atis, atis_status = hx.read_atis()
+            mmsi, mmsi_status = hx.config.read_mmsi()
+            atis, atis_status = hx.config.read_atis()
             print(f"MMSI: {mmsi} [{mmsi_status}]")
             print(f"ATIS: {atis} [{atis_status}]")
             return 0
@@ -53,9 +51,9 @@ class IdCommand(CliCommand):
         if self.args.reset:
             try:
                 logger.info("Resetting MMSI")
-                hx.write_mmsi()
+                hx.config.write_mmsi()
                 logger.info("Resetting ATIS")
-                hx.write_atis()
+                hx.config.write_atis()
             except ProtocolError as e:
                 logger.error(e)
                 return 12
@@ -63,7 +61,7 @@ class IdCommand(CliCommand):
         if self.args.atis is not None:
             try:
                 logger.info(f"New ATIS `{self.args.atis}`")
-                hx.write_atis(self.args.atis)
+                hx.config.write_atis(self.args.atis)
             except ProtocolError as e:
                 logger.error(e)
                 return 13
@@ -71,9 +69,10 @@ class IdCommand(CliCommand):
         if self.args.mmsi is not None:
             try:
                 logger.info(f"New MMSI `{self.args.mmsi}`")
-                hx.write_mmsi(self.args.mmsi)
+                hx.config.write_mmsi(self.args.mmsi)
             except ProtocolError as e:
                 logger.error(e)
                 return 14
 
+        logger.info("Operation successful")
         return 0

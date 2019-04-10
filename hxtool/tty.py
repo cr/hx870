@@ -7,20 +7,21 @@ import serial
 logger = logging.getLogger(__name__)
 
 
-class HX870TTY(object):
+class GenericHXTTY(object):
     """
-    Serial communication for Standard Horizon HX870 maritime radios
+    Serial communication for Standard Horizon HX maritime radios
     """
 
-    def __init__(self, tty):
+    def __init__(self, tty, timeout=1.5):
         """
         Serial connection class for HX870 handsets
 
         :param device: TTY device to use
         """
         self.tty = tty
-        self.s = serial.Serial(tty, timeout=1)
-        logger.info("Connected to `%s`" % self.s.name)
+        logger.debug(f"Connecting to {tty}")
+        self.default_timeout = timeout
+        self.s = serial.Serial(tty, timeout=timeout)
 
     def write(self, data):
         logger.debug("OUT: %s" % repr(data))
@@ -30,20 +31,20 @@ class HX870TTY(object):
         result = self.s.read(*args, **kwargs)
         logger.debug("  IN: %s" % repr(result))
         if len(result) == 0:
-            raise TimeoutError("HX870 read() timeout")
+            raise TimeoutError(f"{self.tty} read() timeout")
         return result
 
-    def read_all(self, *args, **kwargs):
-        result = self.s.read_all(*args, **kwargs)
+    def read_all(self):
+        result = self.s.read_all()
         if len(result) == 0:
-            raise TimeoutError("HX870 read_all() timeout")
+            raise TimeoutError(f"{self.tty} read_all() timeout")
         logger.debug("  IN: %s" % repr(result))
         return result
 
     def read_line(self, *args, **kwargs):
         result = self.s.readline(*args, **kwargs)
         if len(result) == 0:
-            raise TimeoutError("H870TTY read_line() timeout")
+            raise TimeoutError(f"{self.tty} read_line() timeout")
         logger.debug("  IN: %s" % repr(result))
         return result
 
@@ -52,10 +53,10 @@ class HX870TTY(object):
 
     def flush_input(self):
         if self.s.in_waiting > 0:
-            logger.warning("Flushing %d bytes from input buffer" % self.s.in_waiting)
+            logger.warning(f"{self.tty} flushing {self.s.in_waiting} bytes from input buffer")
         return self.s.flushInput()
 
     def flush_output(self):
         if self.s.out_waiting > 0:
-            logger.warning("Flushing %d bytes from output buffer" % self.s.out_waiting)
+            logger.warning(f"{self.tty} flushing {self.s.out_waiting} bytes from output buffer")
         return self.s.flushOutput()
