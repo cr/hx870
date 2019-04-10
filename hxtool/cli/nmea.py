@@ -22,7 +22,6 @@ class NmeaCommand(CliCommand):
             logger.critical("No device to work with")
             return 10
 
-        hx.init()
         if hx.cp_mode:
             logger.error("Handset in CP mode, reboot to regular mode")
             return 10
@@ -35,8 +34,8 @@ class NmeaCommand(CliCommand):
 
 def nmea_dump(h):
     while True:
-        if h.available() > 0:
-            yield h.read_line().decode("ascii").rstrip("\r\n")
+        if h.comm.available() > 0:
+            yield h.comm.read_line().decode("ascii").rstrip("\r\n")
         else:
             time.sleep(0.02)
 
