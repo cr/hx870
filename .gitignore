@@ -1,8 +1,9 @@
 *.pyc
-HX870
+dumps
 doc
 .idea
 *.egg-info
 venv
 Pipfile
 Pipfile.lock
+.DS_Store
