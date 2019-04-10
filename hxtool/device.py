@@ -3,6 +3,7 @@
 from distutils.spawn import find_executable
 import logging
 import subprocess
+import serial.tools.list_ports
 
 from .protocol import GenericHXProtocol
 from .config import HX870Config, HX890Config
@@ -35,7 +36,7 @@ def enumerate(force_device=None, force_model=None):
 
         # Device is given as tty spec, so autodetect model
         for m in [HX870, HX890]:
-            d = m(force_device, init=init)
+            d = m(force_device)
             if d.check_flash_id():
                 return [d]
         else:
@@ -50,7 +51,7 @@ def enumerate(force_device=None, force_model=None):
             logger.critical(f"Invalid model specifier `{force_model}`")
             return []
 
-        return [model(force_device, init=init)]
+        return [model(force_device)]
 
     logger.critical("Unable to detect device")
     return []
@@ -60,32 +61,13 @@ def enumerate_model(hx_device) -> list:
 
     devices = []
 
-    # Mac OS X
-    ioreg_exe = find_executable("ioreg")
-    if ioreg_exe is not None:
-        logger.debug(f"Found ioreg executable at {ioreg_exe}, assuming Mac OS")
-        cmd = [ioreg_exe, "-n", hx_device.usb_product_name, "-rlw0"]
-        p = subprocess.run(cmd, capture_output=True)
-        if p.returncode != 0:
-            logger.error(f"ioreg failed with returncode {p.returncode}")
-            return []
-        lines = p.stdout.decode().splitlines()
-        for line in filter(lambda l: "IODialinDevice" in l, lines):
-            dev = line.split("=")[1].strip(' "')
-            logger.debug(f"ioreg reports {hx_device.handle} at {dev}")
-            if not dev.startswith("/dev"):
-                logger.warning(f"Ignoring strange-looking device `{dev}`")
-            else:
-                devices.append(hx_device(tty=dev))
-        return devices
+    for d in serial.tools.list_ports.comports():
+        if d.vid == hx_device.usb_vendor_id and d.pid == hx_device.usb_product_id:
+            if not d.description == hx_device.usb_product_name \
+                    and not d.description == f"{hx_device.usb_product_name} ({d.device})":
+                logger.warning(f"Unexpected serial device description `{d.description}` (BE CAREFUL)")
+            devices.append(hx_device(d.device))
 
-    # TODO: Windows
-    # Iterate over HKEY_LOCAL_MACHINE\HARDWARE\DEVICEMAP\SERIALCOMM
-
-    # TODO: Linux
-    # Parse lsusb output
-
-    logger.warning("Unsupported operating system for automatic detection. Please specify --tty manually.")
     return devices
 
 
