@@ -49,7 +49,7 @@ class InfoCommand(CliCommand):
             with open(self.args.dump, "wb") as f:
                 logger.info("Reading config flash from handset")
                 try:
-                    data = hx.config.config_read()
+                    data = hx.config.config_read(progress=True)
                     logger.info(f"Writing config to `{self.args.dump}`")
                     f.write(data)
                 except ProtocolError as e:
@@ -63,7 +63,7 @@ class InfoCommand(CliCommand):
                 data = f.read()
                 logger.info("Writing config to handset")
                 try:
-                    hx.config.config_write(data)
+                    hx.config.config_write(data, progress=True)
                 except ProtocolError as e:
                     logger.error(e)
                     ret = 10

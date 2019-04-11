@@ -2,11 +2,12 @@
 
 import os
 
+
 class ConfigFile(object):
 
     MAGIC = b'\x03\x67'
 
-    def __init__(self, file_name, size=1<<15):
+    def __init__(self, file_name, size=(1 << 15)):
         self.m = None
         self.p = None
         self.size = size
@@ -22,7 +23,7 @@ class ConfigFile(object):
         if os.stat(file_name).st_size != self.size:
             raise Exception("unexpected .DAT file size")
         with open(file_name, "rb") as f:
-            self.m = f.read();
+            self.m = f.read()
         if self.m[0:2] != self.MAGIC or self.m[-2:] != self.MAGIC:
             raise Exception("unexpected .DAT file magic")
 

@@ -39,6 +39,7 @@ def nmea_dump(h):
         else:
             time.sleep(0.02)
 
+
 def print_nmea(h):
     for l in nmea_dump(h):
         print(l)

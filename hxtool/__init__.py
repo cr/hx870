@@ -2,9 +2,9 @@
 
 import logging
 
-logger = logging.getLogger(__name__)
-
 from .device import enumerate
+
+logger = logging.getLogger(__name__)
 
 
 def get(args):
