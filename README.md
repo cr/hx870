@@ -1,10 +1,31 @@
-# HX870 phun with pyhx870
+# hxtool
 
 Here's my collection of experimental Python code and reverse engineering notes
-for hacking the Standard Horizon HX870 maritime radios.
+for hacking the Standard Horizon HX-style maritime radios by Yaesu. Currently supported
+are the *HX870* and *HX890* model series. The code also works on FT750-style aviation
+radios, which share the same hardware platform, to some degree as well, but that
+functionality is not exposed on the command line frontend, yet.
 
-The code is hardly documented and fully user-unfriendly and I am feeling
-slightly awful about it.
+## Installation
+
+The code is hardly documented and largely user-unfriendly and I am feeling
+slightly awful about it. However, you may install the command line tool into your
+(preferably virtual) *Python 3.6+* environment via
+`pip install git+https://github.com/cr/hx870`. Then see `hxtool --help` for usage
+information.
+
+`hxtool` works on *Linux*, *Mac OS*, and *Windows 10* (and probably older ones, too) and it
+has been extensively tested with the HX870 radio without any ill effects when used appropriately.
+
+The HX890 portion has only been tested sporadically, and be mindful if this disclaimer:
+
+## Disclaimer
+
+> **It is very easy to completely screw up your radio with low-level tooling like this,**
+> **so BE EXTREMELY CAREFUL and get help from your geek friend if you're out of your depth.**
+> **The software probably contains mistakes that can permanently damage your radio.**
+> **Although it has been used a lot on my personal radio, I cannot guarantee**
+> **that it works on yours. Use it AT YOUR OWN RISK!**
 
 ## Config DAT file dump format
 
