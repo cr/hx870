@@ -17,14 +17,14 @@ class GenericHXConfig(object):
     def config_read(self, progress=False):
         config_data = b''
         bytes_to_go = 0x8000
-        if progress:
-            logger.info(f"Progress 0 / {bytes_to_go} bytes (0%)")
         for offset in range(0x0000, 0x8000, 0x40):
-            config_data += self.p.read_config_memory(offset, 0x40)
             if progress:
                 percent_done = int(100.0 * offset / bytes_to_go)
                 if offset % 0x1000 == 0:
-                    logger.info(f"Progress {offset} / {bytes_to_go} bytes ({percent_done}%)")
+                    logger.info(f"{offset} / {bytes_to_go} bytes ({percent_done}%)")
+            config_data += self.p.read_config_memory(offset, 0x40)
+        if progress:
+            logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
         return config_data
 
     def config_write(self, data, check_region=True, progress=False):
@@ -45,18 +45,18 @@ class GenericHXConfig(object):
             logger.warning("Ignoring region mismatch. Flashing anyway")
 
         if progress:
-            logger.info(f"Progress 0 / {bytes_to_go} bytes (0%)")
+            logger.info(f"0 / {bytes_to_go} bytes (0%)")
         self.p.write_config_memory(0x0002, data[0x0002:0x000f])
         self.p.write_config_memory(0x0010, data[0x0010:0x0040])
         for offset in range(0x0040, 0x7fc0, 0x40):
-            self.p.write_config_memory(offset, data[offset:offset+0x40])
             if progress:
                 percent_done = int(100.0 * offset / bytes_to_go)
                 if offset % 0x1000 == 0:
-                    logger.info(f"Progress {offset} / {bytes_to_go} bytes ({percent_done}%)")
+                    logger.info(f"{offset} / {bytes_to_go} bytes ({percent_done}%)")
+            self.p.write_config_memory(offset, data[offset:offset+0x40])
         self.p.write_config_memory(0x7fc0, data[0x7fc0:0x7ffe])
         if progress:
-            logger.info(f"Progress {bytes_to_go} / {bytes_to_go} bytes (100%)")
+            logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
 
     def read_waypoints(self):
         wp_data = b''
