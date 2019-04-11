@@ -1,22 +1,30 @@
 # -*- coding: utf-8 -*-
 
-from distutils.spawn import find_executable
 import logging
-import subprocess
 import serial.tools.list_ports
 
-from .protocol import GenericHXProtocol
 from .config import HX870Config, HX890Config
+from .protocol import GenericHXProtocol
+from .simulator import HXSimulator
 
 logger = logging.getLogger(__name__)
 
 
-def enumerate(force_device=None, force_model=None):
+def enumerate(force_device=None, force_model=None, add_simulator=False):
 
     global models
 
+    devices = []
+
+    if add_simulator:
+        sc = HXSimulator(mode="CP")
+        sc.start()
+        devices.append(HXSim(sc.tty))
+        sn = HXSimulator(mode="NMEA")
+        sn.start()
+        devices.append(HXSim(sn.tty))
+
     if force_device is None and force_model is None:
-        devices = []
         for model in models.values():
             devices += enumerate_model(model)
         return devices
@@ -25,7 +33,6 @@ def enumerate(force_device=None, force_model=None):
 
         if force_device.isdecimal():
             # User addressed device by its numeric selector
-            devices = []
             for model in models.values():
                 devices += enumerate_model(model)
             try:
@@ -93,7 +100,9 @@ class HX870(object):
         self.comm = self.protocol_model(tty=tty)
         self.config = None
         self.nema = None
+        self.__init_config()
 
+    def __init_config(self):
         # See what we're talking to on that tty
         if self.comm.hx_hardware:
             if self.comm.cp_mode:
@@ -146,6 +155,24 @@ class HX890(HX870):
 
     protocol_model = GenericHXProtocol
     config_model = HX890Config
+    nema_model = "GenericHXNMEA"
+
+
+class HXSim(HX870):
+    """
+    Device object for Standard Horizon HX890 maritime radios
+    """
+    handle = "HXSIM"
+    brand = "Standard Horizon"
+    model = "HX870S Simulator"
+    usb_vendor_id = 9898
+    usb_vendor_name = "YAESU MUSEN CO.,LTD."
+    usb_product_id = 3030
+    usb_product_name = "HX870S"
+    flash_id = ["AM057N"]
+
+    protocol_model = GenericHXProtocol
+    config_model = HX870Config
     nema_model = "GenericHXNMEA"
 
 
