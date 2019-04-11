@@ -21,7 +21,12 @@ class GenericHXTTY(object):
         self.tty = tty
         logger.debug(f"Connecting to {tty}")
         self.default_timeout = timeout
-        self.s = serial.Serial(tty, timeout=timeout)
+        if tty.upper() == "CP_SIM":
+            self.s = SerialHXSimulator(mode="CP", timeout=timeout)
+        elif tty.upper() == "NMEA_SIM":
+            self.s = SerialHXSimulator(mode="NMEA", timeout=timeout)
+        else:
+            self.s = serial.Serial(tty, timeout=timeout)
 
     def write(self, data):
         logger.debug("OUT: %s" % repr(data))
@@ -60,3 +65,42 @@ class GenericHXTTY(object):
         if self.s.out_waiting > 0:
             logger.warning(f"{self.tty} flushing {self.s.out_waiting} bytes from output buffer")
         return self.s.flushOutput()
+
+
+class SerialHXSimulator(object):
+    def __init__(self, mode, timeout=1.5):
+        self.mode = mode
+        self.timeout = timeout
+        self.mem = b"\xff" * 0x8000
+        self.output_buffer = b""
+        self.input_buffer = b""
+
+    @property
+    def in_waiting(self):
+        return len(self.input_buffer)
+
+    @property
+    def out_waiting(self):
+        return len(self.output_buffer)
+
+    def flushInput(self):
+        self.input_buffer = b""
+
+    def flushOutput(self):
+        self.output_buffer = b""
+
+    def read(self, size):
+        r = self.input_buffer[:size]
+        self.input_buffer = self.input_buffer[len(r):]
+        return r
+
+    def write(self, data):
+        self.output_buffer += data
+
+    def readline(self, *args, **kwargs):
+        return b"\r\n"
+
+    def read_all(self):
+        r = self.input_buffer
+        self.input_buffer = b""
+        return r

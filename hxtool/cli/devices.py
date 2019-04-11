@@ -14,7 +14,7 @@ class DevicesCommand(CliCommand):
     help = "enumerate detected devices"
 
     def run(self):
-        devices = enumerate()
+        devices = enumerate(add_simulator=self.args.simulator)
         if len(devices) > 0:
             for device in devices:
                 mode = "unknown mode (BE CAREFUL)"
@@ -24,7 +24,7 @@ class DevicesCommand(CliCommand):
                     mode = "CP mode"
                 if not device.comm.hx_hardware:
                     mode = "unknown hardware (BE CAREFUL)"
-                print(f"[{devices.index(device)}]\t{device.brand}\t{device.model}\t{mode}")
+                print(f"[{devices.index(device)}]\t{device.tty}\t{device.brand}\t{device.model}\t{mode}")
             return 0
 
         else:

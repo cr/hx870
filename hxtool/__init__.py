@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 def get(args):
     """Select a single device according to arguments"""
-    devices = enumerate(force_model=args.model, force_device=args.tty)
+    devices = enumerate(force_model=args.model, force_device=args.tty, add_simulator=args.simulator)
 
     if len(devices) == 0:
         logger.critical("No device detected. Connect device or try specifying --tty")

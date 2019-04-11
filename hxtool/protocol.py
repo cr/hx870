@@ -169,8 +169,7 @@ class GenericHXProtocol(object):
     def cmd_mode(self):
         logger.debug("Sending command mode request")
         self.write(b"P")
-        self.write(b"0")
-        self.write(Message("ACMD:002"))
+        self.write(Message("0ACMD:002"))
 
     def sync(self, flush_output=True, flush_input=True):
         if flush_output:
@@ -262,6 +261,8 @@ class GenericHXProtocol(object):
             if r.type != "#CMDOK":
                 raise ProtocolError("Device did not acknowledge status request")
             r = self.receive()  # expect #CEPSD
+            if r.type != "#CEPSD":
+                raise ProtocolError("Device did not return status")
             radio_status = r.args[0]
             if radio_status != "00":
                 logger.debug("Waiting for radio, state=%s" % radio_status)
