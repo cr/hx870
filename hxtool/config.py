@@ -77,7 +77,7 @@ class GenericHXConfig(object):
         status = data[10:12]
         return mmsi, status
 
-    def write_mmsi(self, mmsi: str=None, status: str=None):
+    def write_mmsi(self, mmsi: str = None, status: str = None):
         if mmsi is None:
             mmsi = "FFFFFFFFFF"
             if status is None:
@@ -102,7 +102,7 @@ class GenericHXConfig(object):
         status = data[10:12]
         return atis, status
 
-    def write_atis(self, atis: str=None, status: str=None):
+    def write_atis(self, atis: str = None, status: str = None):
         if atis is None:
             atis = "FFFFFFFFFF"
             if status is None:
