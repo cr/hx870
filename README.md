@@ -17,7 +17,7 @@ information.
 `hxtool` works on *Linux*, *Mac OS*, and *Windows 10* (and probably older ones, too) and it
 has been extensively tested with the HX870 radio without any ill effects when used appropriately.
 
-The HX890 portion has only been tested sporadically, and be mindful if this disclaimer:
+The HX890 portion has only been tested sporadically, and be mindful of this disclaimer:
 
 ## Disclaimer
 
