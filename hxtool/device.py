@@ -29,9 +29,9 @@ def enumerate(force_device=None, force_model=None):
             for model in models.values():
                 devices += enumerate_model(model)
             try:
-                return devices[force_device]
+                return [devices[int(force_device)]]
             except IndexError:
-                logger.critical("You gave a numeric device selector, but there is no such device.")
+                logger.error(f"Invalid numeric device selector {force_device}")
                 return []
 
         # Device is given as tty spec, so autodetect model

@@ -2,8 +2,8 @@
 
 import logging
 
-from .base import CliCommand
 import hxtool
+from .base import CliCommand
 from ..protocol import ProtocolError
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,6 @@ class IdCommand(CliCommand):
     def run(self):
         hx = hxtool.get(self.args)
         if hx is None:
-            logger.error("No device detected. Connect device or specify --tty")
             return 10
 
         if not hx.comm.cp_mode:

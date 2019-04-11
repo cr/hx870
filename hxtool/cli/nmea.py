@@ -3,8 +3,8 @@
 import logging
 import time
 
+import hxtool
 from .base import CliCommand
-from ..device import enumerate
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +16,8 @@ class NmeaCommand(CliCommand):
 
     def run(self):
 
-        try:
-            hx = enumerate(force_device=self.args.tty, force_model=self.args.model)[0]
-        except IndexError:
-            logger.critical("No device to work with")
+        hx = hxtool.get(self.args)
+        if hx is None:
             return 10
 
         if hx.cp_mode:
