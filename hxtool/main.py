@@ -34,7 +34,7 @@ def get_args(argv=None):
 
     parser.add_argument("-t", "--tty",
                         help="force path or port for serial device",
-                        type=os.path.abspath,
+                        type=str,
                         action="store")
 
     parser.add_argument("-m", "--model",

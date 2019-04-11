@@ -4,9 +4,7 @@ import logging
 
 import hxtool
 from .base import CliCommand
-from ..device import enumerate
 from ..memory import region_code_map
-from ..protocol import ProtocolError
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +17,6 @@ class InfoCommand(CliCommand):
     def run(self):
         hx = hxtool.get(self.args)
         if hx is None:
-            logger.error("No device detected. Connect device or specify --tty")
             return 10
 
         print(f"Model:\t{hx.brand} {hx.model}")

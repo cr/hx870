@@ -12,7 +12,7 @@ def get(args):
     devices = enumerate(force_model=args.model, force_device=args.tty)
 
     if len(devices) == 0:
-        logger.error("No device detected. Connect device or specify --device")
+        logger.critical("No device detected. Connect device or try specifying --tty")
         return None
 
     if len(devices) > 1:
