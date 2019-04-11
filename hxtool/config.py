@@ -48,6 +48,7 @@ class GenericHXConfig(object):
             logger.info(f"0 / {bytes_to_go} bytes (0%)")
         self.p.write_config_memory(0x0002, data[0x0002:0x000f])
         self.p.write_config_memory(0x0010, data[0x0010:0x0040])
+        bytes_done = 0x40
         for offset in range(0x0040, 0x7fc0, 0x40):
             if progress:
                 percent_done = int(100.0 * offset / bytes_to_go)
