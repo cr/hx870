@@ -6,6 +6,14 @@ are the *HX870* and *HX890* model series. The code also works on FT750-style avi
 radios, which share the same hardware platform, to some degree as well, but that
 functionality is not exposed on the command line frontend, yet.
 
+## Disclaimer
+
+> **It is very easy to completely screw up your radio with low-level tooling like this,**
+> **so BE EXTREMELY CAREFUL and get help from your geek friend if you're out of your depth.**
+> **The software probably contains mistakes that can permanently damage your radio.**
+> **Although it has been used a lot on my personal radio, I cannot guarantee**
+> **that it works on yours. Use it AT YOUR OWN RISK!**
+
 ## Installation
 
 The code is hardly documented and largely user-unfriendly and I am feeling
@@ -17,15 +25,7 @@ information.
 `hxtool` works on *Linux*, *Mac OS*, and *Windows 10* (and probably older ones, too) and it
 has been extensively tested with the HX870 radio without any ill effects when used appropriately.
 
-The HX890 portion has only been tested sporadically, and be mindful of this disclaimer:
-
-## Disclaimer
-
-> **It is very easy to completely screw up your radio with low-level tooling like this,**
-> **so BE EXTREMELY CAREFUL and get help from your geek friend if you're out of your depth.**
-> **The software probably contains mistakes that can permanently damage your radio.**
-> **Although it has been used a lot on my personal radio, I cannot guarantee**
-> **that it works on yours. Use it AT YOUR OWN RISK!**
+The HX890 portion has only been tested sporadically, and be mindful of the disclaimer above.
 
 ## Config DAT file dump format
 
@@ -175,3 +175,8 @@ After factory reset, the following values are present at offset 0x0110 in config
 `17 12 26 18  53 52 18 88  80 4E 00 06  11 76 21 45`
 
 After a full reboot, those values are replaced by all FF.
+
+## Testing notes
+
+ - `pytest -v` - running the test suite
+ - `pytest --cov=hxtool --cov-report=term` - running test coverage

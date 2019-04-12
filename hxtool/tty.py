@@ -3,7 +3,6 @@
 import logging
 import serial
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -16,7 +15,8 @@ class GenericHXTTY(object):
         """
         Serial connection class for HX870 handsets
 
-        :param device: TTY device to use
+        :param tty: str TTY device to use
+        :param timeout: float default timeout for serial
         """
         self.tty = tty
         logger.debug(f"Connecting to {tty}")
