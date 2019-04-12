@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import pytest
 from serial import Serial
 from sys import platform
