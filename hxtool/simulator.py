@@ -116,10 +116,17 @@ class HXSimulator(Thread):
                     message += b
                     if message.endswith(b"\r\n"):
                         # If line is complete, process message
-                        self.__process_cp_message(message)
+                        if message.startswith(b"0"):
+                            # The real HX870 doesn't react to the 0ACMD:002
+                            logger.debug(f"CP simulator ignoring message {message}")
+                        else:
+                            self.__process_cp_message(message)
                         message = b""
-                elif b == b"#" or b == b"0":
-                    # Beginning of #... or 0ACMD:002 message?
+                elif b == b"0":
+                    # Beginning of 0ACMD:002 message?
+                    message = b
+                elif b == b"#":
+                    # Beginning of a #-style command
                     message = b
                 elif b == b"?":
                     # Reply with @ to ? to signal CP mode
@@ -139,8 +146,6 @@ class HXSimulator(Thread):
                 self.ignore_cmdok = False
             else:
                 write(self.master, bytes(Message("#CMDOK")))
-        elif msg.type == "0ACMD:002":
-            pass
         elif msg.type == "#CMDSY":
             write(self.master, bytes(Message("#CMDOK")))
         elif msg.type == "#CVRRQ":
