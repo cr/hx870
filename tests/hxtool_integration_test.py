@@ -80,6 +80,37 @@ def test_hxtool_id(capsys):
     assert "MMSI" in outerr.out
     assert "ATIS" in outerr.out
 
+    args = [
+        "--simulator",
+        "-t", "1",
+        "id"
+    ]
+    ret = main(args)
+    assert ret != 0, "hxtool --simulator -t 1 id fails"
+
+    outerr = capsys.readouterr()
+    assert "not in CP mode" in outerr.err
+
+
+def test_hxtool_atis_mmsi(capsys):
+    args = [
+        "--debug",
+        "--simulator",
+        "-t", "0",
+        "id",
+        "--mmsi", "123456789",
+        "--atis", "9123456789",
+        "--reset"
+    ]
+    ret = main(args)
+    assert ret == 0, "hxtool atis/mmsi writing and reset returns 0"
+
+    outerr = capsys.readouterr()
+    assert """CP simulator processing message b'#CEPWR\\t00B0\\t06\\tFFFFFFFFFF00\\t04\\r\\n'""" in outerr.err
+    assert """CP simulator processing message b'#CEPWR\\t00B6\\t06\\tFFFFFFFFFF00\\t02\\r\\n'""" in outerr.err
+    assert """CP simulator processing message b'#CEPWR\\t00B6\\t06\\t912345678901\\t0B\\r\\n'""" in outerr.err
+    assert """CP simulator processing message b'#CEPWR\\t00B0\\t06\\t123456789002\\t07\\r\\n'""" in outerr.err
+
 
 @pytest.mark.slow
 def test_hxtool_config_dump(tmpdir):

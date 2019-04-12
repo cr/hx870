@@ -327,7 +327,7 @@ class GenericHXProtocol(object):
 
     def write_config_memory(self, offset, data):
         self.wait_for_ready()
-        data_string = hexlify(data).decode("ascii")
+        data_string = hexlify(data).decode("ascii").upper()
         self.send("#CEPWR", ["%04X" % offset, "%02X" % len(data), data_string])
         r = self.receive()  # expect #CMDOK
         if r.type != "#CMDOK":

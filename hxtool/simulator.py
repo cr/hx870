@@ -2,7 +2,7 @@
 
 import logging
 
-from binascii import hexlify
+from binascii import hexlify, unhexlify
 from os import ttyname, read, write, set_blocking
 from pty import openpty
 from threading import Event, Thread
@@ -141,6 +141,9 @@ class HXSimulator(Thread):
     def __process_cp_message(self, msg):
         logger.debug(f"CP simulator processing message {msg}")
         msg = Message(parse=msg)
+        if not msg.validate():
+            write(self.master, bytes(Message("#CMDER")))
+            return
         if msg.type == "#CMDOK":
             if self.ignore_cmdok:
                 self.ignore_cmdok = False
@@ -159,9 +162,20 @@ class HXSimulator(Thread):
             write(self.master, bytes(Message("#CMDOK")))
             offset = int(msg.args[0], 16)
             size = int(msg.args[1], 16)
-            data = hexlify(self.c[offset:offset + size]).decode("ascii")
+            data = hexlify(self.c[offset:offset + size]).decode("ascii").upper()
             write(self.master, bytes(Message("#CEPDT", [msg.args[0], msg.args[1], data])))
             # Ignore next CMDOK
             self.ignore_cmdok = True
+        elif msg.type == "#CEPWR":
+            offset = int(msg.args[0], 16)
+            size = int(msg.args[1], 16)
+            data = unhexlify(msg.args[2])
+            if len(data) == size:
+                self.c[offset:offset + size] = data
+                write(self.master, bytes(Message("#CMDOK")))
+                if len(self.c) != 1 << 15:
+                    logger.critical("CP simulator internal memory corruption after write")
+            else:
+                write(self.master, bytes(Message("#CMDER")))
         else:
             write(self.master, bytes(Message("#CMDER")))
