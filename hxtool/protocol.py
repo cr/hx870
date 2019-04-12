@@ -6,7 +6,6 @@ import logging
 import time
 from typing import List
 
-from . import usb as hxusb
 from . import tty as hxtty
 
 logger = logging.getLogger(__name__)
@@ -73,7 +72,7 @@ class Message(object):
         if self.type.startswith("#"):
             return "\t".join([self.type] + self.args)
         elif self.type.startswith("$"):
-            return (self.type + ",".join(self.args))
+            return self.type + ",".join(self.args)
         else:
             raise ProtocolError(f"Invalid message type `{self.type}`")
 

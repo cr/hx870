@@ -69,10 +69,10 @@ def at_exit():
 
 
 # This is the entry point used in setup.py
-def main():
+def main(argv=None):
     global logger
 
-    args = get_args()
+    args = get_args(argv)
 
     if args.debug:
         coloredlogs.DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"

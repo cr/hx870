@@ -6,4 +6,5 @@ doc
 venv
 Pipfile
 Pipfile.lock
+.coverage
 .DS_Store
