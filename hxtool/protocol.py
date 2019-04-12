@@ -4,6 +4,7 @@ from binascii import hexlify, unhexlify
 from functools import reduce
 import logging
 import time
+from typing import List
 
 from . import usb as hxusb
 from . import tty as hxtty
@@ -22,39 +23,73 @@ class Message(object):
 
     UNARY_TYPES = ["#CMDOK", "#CMDER", "#CMDUN", "#CMDSM", "#CMDSY"]  # no args and no checksum
 
-    def __init__(self, message_type=None, args=None, parse=None):
+    def __init__(self, message_type: str = None, args: List[str] = None, parse: bytes or str = None):
 
         self.type = message_type
-        self.args = [] if args is None else args
+        self.args = args or []
         self.checksum_recv = None
 
         if parse is not None:
             if type(parse) is bytes:
                 parse = parse.decode("ascii")
-            parsed = parse.rstrip("\r\n").split("\t")
-            self.type = parsed[0]
-            if len(parsed) > 1:
-                self.checksum_recv = parsed[-1]
-            if len(parsed) > 2:
-                self.args = parsed[1:-1]
+            if parse.startswith("#"):
+                # CP mode command message
+                parsed = parse.rstrip("\r\n").split("\t")
+                self.type = parsed[0]
+                if len(parsed) > 1:
+                    self.checksum_recv = parsed[-1]
+                if len(parsed) > 2:
+                    self.args = parsed[1:-1]
+            elif parse.startswith("$"):
+                # NMEA sentence
+                parsed = parse.rstrip("\r\n")
+                self.type = parsed[:5]
+                args, self.checksum_recv = parsed[5:].split("*")
+                self.args = args.split(",")
+            else:
+                raise ProtocolError(f"Invalid message `{parse}`")
 
     def validate(self, checksum=None):
         if checksum is None:
             checksum = self.checksum
+        if self.checksum_recv is None:
+            return True
         return checksum == self.checksum_recv
 
     @property
     def checksum(self):
-        if self.type is None or not self.type.startswith("#") or self.type in self.UNARY_TYPES:
+        if self.type in self.UNARY_TYPES:
             return None
-        check = ("\t".join([self.type] + self.args) + "\t").encode("ascii").upper()
-        return "%02X" % reduce(lambda x, y: x ^ y, filter(lambda x: x != "!", check))
+        elif self.type.startswith("#"):
+            check = ("\t".join([self.type] + self.args) + "\t").encode("ascii")
+            return "%02X" % reduce(lambda x, y: x ^ y, filter(lambda x: x != "!", check))
+        elif self.type.startswith("$"):
+            check = (self.type[1:] + ",".join(self.args)).encode("ascii")
+            return "%02X" % reduce(lambda x, y: x ^ y, filter(lambda x: x != "!", check))
+        else:
+            return None
+
+    def __str_no_check(self):
+        if self.type.startswith("#"):
+            return "\t".join([self.type] + self.args)
+        elif self.type.startswith("$"):
+            return (self.type + ",".join(self.args))
+        else:
+            raise ProtocolError(f"Invalid message type `{self.type}`")
 
     def __str__(self):
-        chk = self.checksum
-        check = [] if chk is None else [chk]
-        msg = [self.type] + self.args + check
-        return "\t".join(msg).upper() + "\r\n"
+        if self.type.startswith("#"):
+            if self.type in self.UNARY_TYPES:
+                msg = [self.type]
+            else:
+                # Received checksum has precedence over calculated
+                check = self.checksum_recv or self.checksum
+                msg = [self.type] + self.args + [check]
+            return "\t".join(msg) + "\r\n"
+        elif self.type.startswith("$"):
+            # Received checksum has precedence over calculated
+            check = self.checksum_recv or self.checksum
+            return (self.type + ",".join(self.args) + "*" + check) + "\r\n"
 
     def __bytes__(self):
         return str(self).encode('ascii')
@@ -67,7 +102,16 @@ class Message(object):
             yield b
 
     def __eq__(self, other):
-        return self.type == other.type and self.args == other.args
+        if str(self) != str(other):
+            return False
+        else:
+            if self.checksum_recv == other.checksum_recv:
+                return True
+            else:
+                if self.checksum_recv is None or other.checksum_recv is None:
+                    return True
+                else:
+                    return False
 
     @classmethod
     def parse(cls, messages):
@@ -168,10 +212,10 @@ class GenericHXProtocol(object):
 
     def cmd_mode(self):
         logger.debug("Sending command mode request")
-        self.write(b"P")
-        self.write(Message("0ACMD:002"))
+        # The HX870 doesn't seem to care. It responds to #CMDSY without this.
+        self.write(b"0ACMD:002\r\n")
 
-    def sync(self, flush_output=True, flush_input=True):
+    def sync(self, flush_output=False, flush_input=True):
         if flush_output:
             self.conn.flush_output()
         if flush_input:
