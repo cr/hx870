@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class HXSimulator(Thread):
 
     instances = []
+    loop_delay_default = 1 / 19200
 
     @classmethod
     def register(cls, instance):
@@ -32,7 +33,7 @@ class HXSimulator(Thread):
             instance.join()
 
     def __init__(self, mode: str, config: bytearray or None = None,
-                 loop_delay: float = 1.0 / 9600, nmea_delay: float = 3.0):
+                 loop_delay: float = None, nmea_delay: float = 3.0):
         super().__init__()
         assert mode in ["CP", "NMEA"], "Invalid simulator mode"
         self.mode = mode
@@ -40,9 +41,9 @@ class HXSimulator(Thread):
         self.master, self.slave = openpty()
         self.tty = ttyname(self.slave)
         self.stop_running = Event()
-        self.loop_delay = loop_delay
+        self.loop_delay = loop_delay or self.loop_delay_default
         self.nmea_delay = nmea_delay
-        HXSimulator.instances.append(self)
+        HXSimulator.register(self)
         # FIXME: This will fail on Windows (probably on import)
         set_blocking(self.master, False)
         self.ignore_cmdok = False
