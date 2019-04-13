@@ -115,6 +115,16 @@ def test_hxtool_atis_mmsi(capsys):
 @pytest.mark.slow
 def test_hxtool_config_dump(tmpdir):
     conf_file = tmpdir.mkdir("config_dump").join("config.dat")
+
+    args = [
+        "--simulator",
+        "-t", "1",
+        "config",
+        "-d", str(conf_file)
+    ]
+    ret = main(args)
+    assert ret != 0, "hxtool --simulator -t 1 config --dump fails"
+
     args = [
         "--simulator",
         "-t", "0",
@@ -127,3 +137,28 @@ def test_hxtool_config_dump(tmpdir):
     with open(conf_file, mode="rb") as f:
         config = f.read()
     assert len(config) == 1 << 15
+
+
+@pytest.mark.slow
+def test_hxtool_config_flash(tmpdir):
+    conf_file = tmpdir.mkdir("config_dump").join("config.dat")
+    with open(conf_file, "wb") as f:
+        f.write(b"\xff" * (1 << 15))
+
+    args = [
+        "--simulator",
+        "-t", "1",
+        "config",
+        "-f", str(conf_file)
+    ]
+    ret = main(args)
+    assert ret != 0, "hxtool --simulator -t 1 config --flash fails"
+
+    args = [
+        "--simulator",
+        "-t", "0",
+        "config",
+        "-f", str(conf_file)
+    ]
+    ret = main(args)
+    assert ret == 0, "hxtool --simulator -t 0 config --flash returns 0"
