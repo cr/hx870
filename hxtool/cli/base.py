@@ -1,7 +1,8 @@
-import logging
+# -*- coding: utf-8 -*-
 
+from logging import getLogger
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class CliCommand(object):

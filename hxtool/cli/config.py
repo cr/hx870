@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 
-import logging
-import os
+from logging import getLogger
+from os.path import abspath
 
 import hxtool
 from .base import CliCommand
 from ..protocol import ProtocolError
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class InfoCommand(CliCommand):
@@ -20,12 +20,12 @@ class InfoCommand(CliCommand):
 
         parser.add_argument("-d", "--dump",
                             help="read config from handset and write to file",
-                            type=os.path.abspath,
+                            type=abspath,
                             action="store")
 
         parser.add_argument("-f", "--flash",
                             help="read config from file and write to handset",
-                            type=os.path.abspath,
+                            type=abspath,
                             action="store")
 
     def run(self):

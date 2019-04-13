@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 
-import logging
-
 from binascii import hexlify, unhexlify
+from logging import getLogger
 from os import ttyname, read, write, set_blocking
 from pty import openpty
 from threading import Event, Thread
-from time import sleep, time
+from time import time
 
 from .protocol import Message
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class HXSimulator(Thread):

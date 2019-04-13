@@ -2,13 +2,13 @@
 
 from binascii import hexlify, unhexlify
 from functools import reduce
-import logging
-import time
+from logging import getLogger
+from time import time, sleep
 from typing import List
 
 from . import tty as hxtty
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class ProtocolError(Exception):
@@ -224,7 +224,7 @@ class GenericHXProtocol(object):
         if r.type != "#CMDOK":
             logger.debug("Device failed to sync, trying harder")
             self.conn.flush_output()
-            time.sleep(0.1)
+            sleep(0.1)
             self.conn.flush_input()
             self.write(Message("#CMDSY"))
             r = self.receive()  # expect #CMDOK
@@ -296,9 +296,9 @@ class GenericHXProtocol(object):
             return False
 
     def wait_for_ready(self, timeout=1):
-        timeout_time = time.time() + timeout
+        timeout_time = time() + timeout
         radio_status = None
-        while radio_status != "00" and time.time() < timeout_time:
+        while radio_status != "00" and time() < timeout_time:
             self.send("#CEPSR", ["00"])
             r = self.receive()  # expect #CMDOK
             if r.type != "#CMDOK":

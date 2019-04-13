@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
 from binascii import hexlify, unhexlify
-import logging
+from logging import getLogger
 from re import match
 
 from . import protocol
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 def unpack_waypoint(data):
