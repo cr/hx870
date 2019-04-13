@@ -1,32 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import argparse
 import atexit
+from argparse import ArgumentParser
+from logging import getLogger
+from sys import exit, argv, stdout
+
 import coloredlogs
-import logging
-import pkg_resources as pkgr
-import sys
+from pkg_resources import require
 
 import hxtool.cli
 from hxtool.simulator import HXSimulator
 
 coloredlogs.DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
 coloredlogs.install(level="INFO")
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
-def get_args(argv=None):
+def get_args(args=None):
     """
     Argument parsing
     :return: Argument parser object
     """
-    if argv is None:
-        argv = sys.argv[1:]
 
-    pkg_version = pkgr.require("hxtool")[0].version
+    pkg_version = require("hxtool")[0].version
 
-    parser = argparse.ArgumentParser(prog="hxtool")
+    parser = ArgumentParser(prog="hxtool")
     parser.add_argument("--version", action="version", version="%(prog)s " + pkg_version)
 
     parser.add_argument("--debug",
@@ -56,7 +55,7 @@ def get_args(argv=None):
         sub_parser = subparsers.add_parser(command_name, help=command_class.help)
         command_class.setup_args(sub_parser)
 
-    return parser.parse_args(argv)
+    return parser.parse_args(args or argv[1:])
 
 
 @atexit.register
@@ -68,10 +67,10 @@ def at_exit():
 
 
 # This is the entry point used in setup.py
-def main(argv=None):
+def main(main_args=None):
     global logger
 
-    args = get_args(argv)
+    args = get_args(main_args)
 
     if args.debug:
         coloredlogs.DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -83,8 +82,8 @@ def main(argv=None):
         result = hxtool.cli.run(args)
 
     except KeyboardInterrupt:
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+        stdout.write("\n")
+        stdout.flush()
         logger.critical("User abort")
         result = 5
 
@@ -103,4 +102,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit(main())

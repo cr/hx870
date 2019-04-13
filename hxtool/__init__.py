@@ -3,9 +3,9 @@
 import logging
 
 from . import cli
-from . import device
 from . import config
 from . import config_file
+from . import device
 from . import main
 from . import memory
 from . import protocol

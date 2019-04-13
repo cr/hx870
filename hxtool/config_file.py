@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-import os
+from os import path, stat
 
 
 class ConfigFile(object):
@@ -12,7 +12,7 @@ class ConfigFile(object):
         self.p = None
         self.size = size
 
-        if file_name is None or not os.path.isfile(file_name):
+        if file_name is None or not path.isfile(file_name):
             self.clear()
         else:
             self.read(file_name)
@@ -20,7 +20,7 @@ class ConfigFile(object):
     def read(self, file_name):
         if not file_name.lower().endswith(".dat"):
             raise Exception("unexpected .DAT file extension")
-        if os.stat(file_name).st_size != self.size:
+        if stat(file_name).st_size != self.size:
             raise Exception("unexpected .DAT file size")
         with open(file_name, "rb") as f:
             self.m = f.read()

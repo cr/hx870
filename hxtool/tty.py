@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
-import logging
-import serial
+from logging import getLogger
+from serial import Serial
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class GenericHXTTY(object):
@@ -21,7 +21,7 @@ class GenericHXTTY(object):
         self.tty = tty
         logger.debug(f"Connecting to {tty}")
         self.default_timeout = timeout
-        self.s = serial.Serial(tty, timeout=timeout)
+        self.s = Serial(tty, timeout=timeout)
 
     def write(self, data):
         logger.debug("OUT: %s" % repr(data))

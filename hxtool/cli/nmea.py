@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
-import logging
-import time
+from logging import getLogger
+from time import sleep
 
 import hxtool
 from .base import CliCommand
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class NmeaCommand(CliCommand):
@@ -35,7 +35,7 @@ def nmea_dump(h):
         if h.comm.available() > 0:
             yield h.comm.read_line().decode("ascii").rstrip("\r\n")
         else:
-            time.sleep(0.02)
+            sleep(0.02)
 
 
 def print_nmea(h):

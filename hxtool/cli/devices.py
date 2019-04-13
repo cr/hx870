@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 
-import logging
+from logging import getLogger
 
 from .base import CliCommand
 from ..device import enumerate
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class DevicesCommand(CliCommand):

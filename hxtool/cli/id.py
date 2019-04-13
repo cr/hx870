@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
-import logging
+from logging import getLogger
 
 import hxtool
 from .base import CliCommand
 from ..protocol import ProtocolError
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class IdCommand(CliCommand):

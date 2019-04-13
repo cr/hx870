@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
-import logging
+from logging import getLogger
 
 import hxtool
 from .base import CliCommand
 from ..memory import region_code_map
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class InfoCommand(CliCommand):

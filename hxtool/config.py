@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
 from binascii import hexlify, unhexlify
-import logging
+from logging import getLogger
 
 from .memory import unpack_waypoint
 from .protocol import GenericHXProtocol, ProtocolError
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 class GenericHXConfig(object):

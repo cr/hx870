@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 
-import logging
-import serial.tools.list_ports
+from logging import getLogger
+from serial.tools import list_ports
 
 from .config import HX870Config, HX890Config
 from .protocol import GenericHXProtocol
 from .simulator import HXSimulator
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 
 def enumerate(force_device=None, force_model=None, add_simulator=False):
@@ -68,7 +68,7 @@ def enumerate_model(hx_device) -> list:
 
     devices = []
 
-    for d in serial.tools.list_ports.comports():
+    for d in list_ports.comports():
         if d.vid == hx_device.usb_vendor_id and d.pid == hx_device.usb_product_id:
             if not d.description == hx_device.usb_product_name \
                     and not d.description == f"{hx_device.usb_product_name} ({d.device})":
