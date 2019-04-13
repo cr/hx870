@@ -5,12 +5,11 @@ import argparse
 import atexit
 import coloredlogs
 import logging
-import os
 import pkg_resources as pkgr
 import sys
 
-from . import cli
-from .simulator import HXSimulator
+import hxtool.cli
+from hxtool.simulator import HXSimulator
 
 coloredlogs.DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
 coloredlogs.install(level="INFO")
@@ -51,7 +50,7 @@ def get_args(argv=None):
 
     # Set up subparsers, one for each command
     subparsers = parser.add_subparsers(help="sub command", dest="command")
-    commands_list = cli.list_commands()
+    commands_list = hxtool.cli.list_commands()
     for command_name in commands_list:
         command_class = commands_list[command_name]
         sub_parser = subparsers.add_parser(command_name, help=command_class.help)
@@ -80,10 +79,8 @@ def main(argv=None):
 
     logger.debug("Command arguments: %s" % args)
 
-    result = 20
-
     try:
-        result = cli.run(args)
+        result = hxtool.cli.run(args)
 
     except KeyboardInterrupt:
         sys.stdout.write("\n")
@@ -103,3 +100,7 @@ def main(argv=None):
 
     logger.debug("Leaving main()")
     return result
+
+
+if __name__ == "__main__":
+    sys.exit(main())
