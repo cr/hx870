@@ -58,7 +58,7 @@ def get_args(args=None):
     return parser.parse_args(args or argv[1:])
 
 
-@atexit.register
+# @atexit.register
 def at_exit():
     logger.debug("Waiting for backround threads")
     HXSimulator.stop_instances()

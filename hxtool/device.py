@@ -155,7 +155,7 @@ class HX890(HX870):
 
     protocol_model = GenericHXProtocol
     config_model = HX890Config
-    nema_model = "GenericHXNMEA"
+    nmea_model = "GenericHXNMEA"
 
 
 class HXSim(HX870):
@@ -173,7 +173,7 @@ class HXSim(HX870):
 
     protocol_model = GenericHXProtocol
     config_model = HX870Config
-    nema_model = "GenericHXNMEA"
+    nmea_model = "GenericHXNMEA"
 
 
 models = {}

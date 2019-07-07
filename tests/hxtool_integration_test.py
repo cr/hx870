@@ -4,9 +4,18 @@ import pytest
 
 from hxtool.main import main
 from hxtool.device import HXSim
+from hxtool.simulator import HXSimulator
 
 
-def test_hxtool_devices(capsys):
+@pytest.fixture(name="kill_sims")
+def kill_simulator_threads_fixture():
+    yield None
+    HXSimulator.stop_instances()
+    HXSimulator.join_instances()
+
+
+def test_hxtool_devices(capsys, kill_sims):
+    del kill_sims
     args = [
         "--simulator",
         "devices"
@@ -32,7 +41,8 @@ def test_hxtool_devices(capsys):
     assert HXSim.model in nmea_sim
 
 
-def test_hxtool_info(capsys):
+def test_hxtool_info(capsys, kill_sims):
+    del kill_sims
     args = [
         "--simulator",
         "-t", "0",
@@ -65,7 +75,9 @@ def test_hxtool_info(capsys):
     assert HXSim.model in outerr.out
 
 
-def test_hxtool_id(capsys):
+def test_hxtool_id(capsys, kill_sims):
+    del kill_sims
+
     args = [
         "--simulator",
         "-t", "0",
@@ -92,7 +104,9 @@ def test_hxtool_id(capsys):
     assert "not in CP mode" in outerr.err
 
 
-def test_hxtool_atis_mmsi(capsys):
+def test_hxtool_atis_mmsi(capsys, kill_sims):
+    del kill_sims
+
     args = [
         "--debug",
         "--simulator",
@@ -113,7 +127,8 @@ def test_hxtool_atis_mmsi(capsys):
 
 
 @pytest.mark.slow
-def test_hxtool_config_dump(tmpdir):
+def test_hxtool_config_dump(tmpdir, kill_sims):
+    del kill_sims
     conf_file = tmpdir.mkdir("config_dump").join("config.dat")
 
     args = [
@@ -140,7 +155,8 @@ def test_hxtool_config_dump(tmpdir):
 
 
 @pytest.mark.slow
-def test_hxtool_config_flash(tmpdir):
+def test_hxtool_config_flash(tmpdir, kill_sims):
+    del kill_sims
     conf_file = tmpdir.mkdir("config_dump").join("config.dat")
     with open(conf_file, "wb") as f:
         f.write(b"\xff" * (1 << 15))

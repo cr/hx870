@@ -22,6 +22,8 @@ class GenericHXTTY(object):
         logger.debug(f"Connecting to {tty}")
         self.default_timeout = timeout
         self.s = Serial(tty, timeout=timeout)
+        self.s.flushInput()
+        self.s.flushOutput()
 
     def write(self, data):
         logger.debug("OUT: %s" % repr(data))

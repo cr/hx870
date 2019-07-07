@@ -2,7 +2,8 @@
 
 from binascii import hexlify, unhexlify
 from logging import getLogger
-from os import ttyname, read, write, set_blocking
+from os import ttyname, read, write, close, set_blocking
+# FIXME: Importing pty fails on Windows
 from pty import openpty
 from threading import Event, Thread
 from time import time
@@ -15,7 +16,7 @@ logger = getLogger(__name__)
 class HXSimulator(Thread):
 
     instances = []
-    loop_delay_default = 1 / 19200
+    loop_delay_default = 1 / 38400
 
     @classmethod
     def register(cls, instance):
@@ -24,7 +25,8 @@ class HXSimulator(Thread):
     @classmethod
     def stop_instances(cls):
         for instance in cls.instances:
-            instance.stop()
+            if instance.is_alive():
+                instance.stop()
 
     @classmethod
     def join_instances(cls):
@@ -34,20 +36,24 @@ class HXSimulator(Thread):
     def __init__(self, mode: str, config: bytearray or None = None,
                  loop_delay: float = None, nmea_delay: float = 3.0):
         super().__init__()
+        HXSimulator.register(self)
+        self.id = HXSimulator.instances.index(self)
         assert mode in ["CP", "NMEA"], "Invalid simulator mode"
         self.mode = mode
         self.c = config or bytearray(b"\xff" * 0x8000)
         self.master, self.slave = openpty()
         self.tty = ttyname(self.slave)
+        self.name = f"HXSimulator-{self.id} [{self.tty}]"
         self.stop_running = Event()
         self.loop_delay = loop_delay or self.loop_delay_default
         self.nmea_delay = nmea_delay
-        HXSimulator.register(self)
         # FIXME: This will fail on Windows (probably on import)
         set_blocking(self.master, False)
         self.ignore_cmdok = False
 
     def run(self):
+        if self.stop_running.is_set():
+            raise Exception("HXSimulator can not be restarted")
         if self.mode == "NMEA":
             self.__run_nmea_mode()
         elif self.mode == "CP":
