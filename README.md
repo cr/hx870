@@ -36,6 +36,12 @@ It is still incomplete and currently only documented in form of a
 If you can C and figure out their custom lingo for defining bitfields, you'll have
 no trouble reading it.
 
+## Experimantal support for GPS log
+
+GPS logs can now be exported and erased. Supported output formats are GPX, JSON, and raw log bytes.
+`hxtool gpslog` should dump some log content to screen if radio is in programming mode.
+See `hxtool gpslog --help` for usage info.
+
 ## HX870 USB protocol
 
 The hardware exposes three USB endpoints, EP0, EP1, and EP2. EP0 is a control endpoint.
@@ -127,8 +133,8 @@ Checksum is XOR reduce over the raw bytes between $ and *.
 * `$PMTK183*38` - StatusLog, sent to radio
 * `$PMTKLOG,1,1,b,127,60,0,0,1,1,0*26` - Radio reply to StatusLog
 
+* `$PMTK001,183,3*3A` - Radio ACK of StatusLog
 * `$PMTK622,1*29` - ReadLog, sent to radio
-* `$PMTK001,183,3*3A` - Radio response after ReadLog
 * `$PMTKLOX,0,43*6E` - Radio response with data
 * `$PMTKLOX,1,0,0100010B,7F000000,...,FFFFFFF*27` - Log data
 * `$PMTKLOX,1,1,FFFFFFFF,FFFFFFFF,...,FFFFFFF*59` - Log data
@@ -136,10 +142,10 @@ Checksum is XOR reduce over the raw bytes between $ and *.
 * `...`
 * `$PMTKLOX,1,42,FFFFFFFF,FFFFFFFF,...,FFFFFFF*6E` - Log data
 * `$PMTKLOX,2*47` - From radio after log data
-* `$PMTK001,622,3*36` - From radio after log data
+* `$PMTK001,622,3*36` - Radio ACK of ReadLog
 
 * `$PMTK184,1*22` - EraseLog
-* `$PMTK001,184,3*3D` - Radio reply after EraseLog
+* `$PMTK001,184,3*3D` - Radio ACK EraseLog
 
 * `$PMTK...` - numArray
 * `$PMTK0..$PMTK8`
