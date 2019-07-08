@@ -31,7 +31,7 @@ class GenericHXTTY(object):
 
     def read(self, *args, **kwargs):
         result = self.s.read(*args, **kwargs)
-        logger.debug("  IN: %s" % repr(result))
+        logger.debug("  IN: %s", repr(result))
         if len(result) == 0:
             raise TimeoutError(f"{self.tty} read() timeout")
         return result
@@ -40,14 +40,14 @@ class GenericHXTTY(object):
         result = self.s.read_all()
         if len(result) == 0:
             raise TimeoutError(f"{self.tty} read_all() timeout")
-        logger.debug("  IN: %s" % repr(result))
+        logger.debug("  IN: %s", repr(result))
         return result
 
     def read_line(self, *args, **kwargs):
         result = self.s.readline(*args, **kwargs)
         if len(result) == 0:
             raise TimeoutError(f"{self.tty} read_line() timeout")
-        logger.debug("  IN: %s" % repr(result))
+        logger.debug("  IN: %s", repr(result))
         return result
 
     def available(self):
