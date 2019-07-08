@@ -332,3 +332,72 @@ class GenericHXProtocol(object):
         r = self.receive()  # expect #CMDOK
         if r.type != "#CMDOK":
             raise ProtocolError("Device did not acknowledge write")
+
+    def read_gps_log(self) -> bytes:
+        self.wait_for_ready()
+        raw_log_data = b''
+
+        # Set up log transmission
+        # This is what the original log reader does, but it just makes the radio reply with yet unknown messages.
+        # Log transfer works well without setup on HX870.
+        # self.send("$PMTK", ["251", "115200"])
+
+        # StatusLog command to radio
+        self.send("$PMTK", ["183"])
+
+        # Radio replies with log status
+        r = self.receive()
+        if r.type != "$PMTK" or len(r.args) != 11 or r.args[0] != "LOG":
+            raise ProtocolError(f"Unexpected response to StatusLog from device: {r}")
+        # TODO: evaluate status
+
+        # Radio acknowledges StatusLog command
+        r = self.receive()
+        if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "183", "3"]:
+            raise ProtocolError(f"Unexpected StatusLog acknowledgement from device: {r}")
+
+        # ReadLog command to radio
+        self.send("$PMTK", ["622", "1"])
+
+        # Radio replies with log header
+        r = self.receive()
+        if r.type != "$PMTK" or len(r.args) != 3 or r.args[0] != "LOX" or r.args[1] != "0":
+            raise ProtocolError(f"Unexpected log header from device: {r}")
+        number_of_lines = int(r.args[2])
+        received_line_numbers = []
+
+        # What follows is a flash memory dump of the log data
+        # LOX messages with first arg "1" indicate a log dump line
+        # LOX message with first arg "2" indicates end of log
+        while True:
+            r = self.receive()
+            if r.type != "$PMTK" or len(r.args) < 2 or r.args[0] != "LOX" or r.args[1] not in ("1", "2"):
+                raise ProtocolError(f"Unexpected log line from device: {r}")
+            if len(r.args) >= 2 and r.args[1] == "2":
+                # Received log footer
+                break
+            # Received log line with raw data
+            received_line_numbers.append(int(r.args[2]))
+            raw_waypoint_data = r.args[3:]
+            for word in raw_waypoint_data:
+                raw_log_data += unhexlify(word)
+
+        # Did we receive the log in order and completely?
+        if received_line_numbers != list(range(number_of_lines)):
+            raise ProtocolError(f"Unexpected log dump sequence from device")
+
+        # Radio acknowledges ReadLog command
+        r = self.receive()
+        if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "622", "3"]:
+            raise ProtocolError(f"Unexpected ReadLog acknowledgement from device: {r}")
+
+        return raw_log_data
+
+    def erase_gps_log(self):
+        # EraseLog command to radio
+        self.send("$PMTK", ["184", "1"])
+
+        # Radio acknowledges StatusLog command
+        r = self.receive()
+        if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "184", "3"]:
+            raise ProtocolError(f"Unexpected EraseLog acknowledgement from device: {r}")

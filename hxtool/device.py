@@ -4,6 +4,7 @@ from logging import getLogger
 from serial.tools import list_ports
 
 from .config import HX870Config, HX890Config
+from .nmea import HX870NMEAProtocol, HX890NMEAProtocol
 from .protocol import GenericHXProtocol
 from .simulator import HXSimulator
 
@@ -93,13 +94,13 @@ class HX870(object):
 
     protocol_model = GenericHXProtocol
     config_model = HX870Config
-    nmea_model = "GenericHXNMEA"
+    nmea_model = HX870NMEAProtocol
 
     def __init__(self, tty):
         self.tty = tty
         self.comm = self.protocol_model(tty=tty)
         self.config = None
-        self.nema = None
+        self.nmea = None
         self.__init_config()
 
     def __init_config(self):
@@ -112,8 +113,7 @@ class HX870(object):
                 logger.info(f"Device on {self.tty} is {self.handle} in CP mode, firmware version {fw}")
             elif self.comm.nmea_mode:
                 self.config = None
-                # self.nmea = self.nmea_model(self.comm)
-                self.nmea = None
+                self.nmea = self.nmea_model(self.comm)
                 logger.info(f"Device on {self.tty} is {self.handle} in NMEA mode")
             elif not self.comm.cp_mode and not self.comm.nmea_mode:
                 self.config = None
@@ -122,8 +122,7 @@ class HX870(object):
                 logger.critical("This should never happen. Please file an issue on GitHub.")
             else:
                 self.config = self.config_model(self.comm)
-                # self.nmea = self.nmea_model(self.comm)
-                self.nmea = None
+                self.nmea = self.nmea_model(self.comm)
                 logger.warning(f"Device on {self.tty} is {self.handle} reports both CP and NMEA mode")
                 logger.critical("This should never happen. Please file an issue on GitHub.")
         else:
@@ -155,7 +154,7 @@ class HX890(HX870):
 
     protocol_model = GenericHXProtocol
     config_model = HX890Config
-    nmea_model = "GenericHXNMEA"
+    nmea_model = HX890NMEAProtocol
 
 
 class HXSim(HX870):
@@ -173,7 +172,7 @@ class HXSim(HX870):
 
     protocol_model = GenericHXProtocol
     config_model = HX870Config
-    nmea_model = "GenericHXNMEA"
+    nmea_model = HX870NMEAProtocol
 
 
 models = {}
