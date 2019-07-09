@@ -6,7 +6,6 @@ import gpxpy.gpx
 from json import dump
 from logging import getLogger
 from os.path import abspath
-from pprint import pprint as pp
 
 import hxtool
 from .base import CliCommand
@@ -111,6 +110,7 @@ def decode_gps_log(data: bytes) -> dict or None:
         logger.warning(f"Unexpected magic bytes in log header: {hexlify(log_header).decode('ascii')}")
 
     bitmap = data[0x16:0x3c]  # bitfield encoding log slot usage: 1 unused, 0: used
+    del bitmap  # Bitmap is only used for the first 201 slots. Dysfunctional legacy?
     unknown = data[0x3c:0x40]
 
     log = {
@@ -147,17 +147,19 @@ def write_gpx(log_data: bytes,  file_name: str) -> int:
 
     # Create points:
     for point in log["waypoints"]:
-        gpx_segment.points.append(gpxpy.gpx.GPXTrackPoint(
+        p = gpxpy.gpx.GPXTrackPoint(
             latitude=point["latitude"],
             longitude=point["longitude"],
-            elevation=point["altitude"],
+            elevation=point["elevation"],
             time=point["utc_time"],
-            speed=point["speed"]  # FIXME: unit of speed is unknown (kn?)
-
-        ))
+        )
+        # TODO: Use GPX 1.1 extensions for speed and heading, but which ones?
+        # {"nmea:speed": point["speed"] * 3.6 / 1.852}
+        # {"nmea:heading": point["heading"]}
+        gpx_segment.points.append(p)
 
     with open(file_name, "w") as f:
-        f.write(gpx.to_xml())
+        f.write(gpx.to_xml(version="1.1"))
 
     return 0
 
@@ -181,10 +183,12 @@ def write_raw(log_data: bytes, file_name: str) -> int:
         f.write(log_data)
     return 0
 
+
 def to_hm(deg: float) -> (int, float):
     minutes, minutes_remainder = divmod(deg, 1/60)
     hours, minutes = divmod(minutes, 60)
     return int(hours), minutes + 60 * minutes_remainder
+
 
 def dump_log(log_data):
     log = decode_gps_log(log_data)
@@ -199,7 +203,7 @@ def dump_log(log_data):
         print(f"{wp['utc_time'].isoformat()}\t"
               f"{abs(lat_deg):02d}°{lat_min:07.04f}{lat_dir}\t"
               f"{abs(lon_deg):03d}°{lon_min:07.04f}{lon_dir}\t"
-              f"{wp['altitude']:d}m\t"
+              f"{wp['elevation']:d}m\t"
               f"{wp['heading']:3d}°\t"
-              f"{wp['speed']:2d}kn\t")
+              f"{wp['speed']:2d}m/s\t")
     return 0
