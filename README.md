@@ -16,6 +16,8 @@ functionality is not exposed on the command line frontend, yet.
 
 ## Installation
 
+**This software does not work with Python 2.7!** It produces just a cryptic error message.
+
 The code is hardly documented and largely user-unfriendly and I am feeling
 slightly awful about it. However, you may install the command line tool into your
 (preferably virtual) *Python 3.6+* environment via
