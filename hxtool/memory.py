@@ -76,7 +76,7 @@ def unpack_log_line(data: bytes):
     if len(data) != 20 or data[:4] == "\xff\xff\xff\xff":
         raise protocol.ProtocolError(f"Invalid log line data: {hexlify(data).decode('ascii')}")
 
-    timestamp, tz_code, latitude, longitude, altitude, speed, heading, checksum = unpack("<IBffhhhB", data)
+    timestamp, tz_code, latitude, longitude, elevation, speed, heading, checksum = unpack("<IBffhhhB", data)
 
     chk = reduce(lambda x, y: x ^ y, data[:-1])
     if chk != checksum:
@@ -90,8 +90,8 @@ def unpack_log_line(data: bytes):
         "tz_code": tz_code,
         "latitude": latitude,
         "longitude": longitude,
-        "altitude": altitude,  # FIXME: Unit is always meters?
-        "speed": speed,  # FIXME: Is this really speed? What unit is it?
+        "elevation": elevation,  # meters
+        "speed": speed,  # meters per second
         "heading": heading
     }
 
