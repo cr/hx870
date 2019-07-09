@@ -120,6 +120,10 @@ class Message(object):
             if len(message) > 0:
                 yield cls(parse=message)
 
+    def is_full_stop(self):
+        # These may be interspersed in comms and must be easily ignorable
+        return self.type == "$PMTK" and self.args == ["LOG", "FULL_STOP"]
+
 
 class GenericHXProtocol(object):
 
@@ -206,8 +210,13 @@ class GenericHXProtocol(object):
     def send(self, message_type, args=None):
         self.write(Message(message_type, args))
 
-    def receive(self):
-        return Message(parse=self.read_line())
+    def receive(self, ignore_full_stop=True):
+        # Radio starts sputtering $PMTK "FULL_STOP" sentences in comms when log is full.
+        while True:
+            m = Message(parse=self.read_line())
+            if not ignore_full_stop or not m.is_full_stop():
+                return m
+            logger.debug("Ignoring FULL_STOP warning from radio")
 
     def cmd_mode(self):
         logger.debug("Sending command mode request")
@@ -333,34 +342,58 @@ class GenericHXProtocol(object):
         if r.type != "#CMDOK":
             raise ProtocolError("Device did not acknowledge write")
 
-    def read_gps_log(self) -> bytes:
-        self.wait_for_ready()
-        raw_log_data = b''
-
-        # Set up log transmission
-        # This is what the original log reader does, but it just makes the radio reply with yet unknown messages.
-        # Log transfer works well without setup on HX870.
-        # self.send("$PMTK", ["251", "115200"])
-
+    def read_gps_log_status(self) -> dict:
         # StatusLog command to radio
         self.send("$PMTK", ["183"])
 
-        # Radio replies with log status
-        r = self.receive()
-        if r.type != "$PMTK" or len(r.args) != 11 or r.args[0] != "LOG":
-            raise ProtocolError(f"Unexpected response to StatusLog from device: {r}")
-        # TODO: evaluate status
+        # Radio replies with log status, but listen for full stop warning
+        s = self.receive(ignore_full_stop=False)
+        if s.type != "$PMTK" or len(s.args) < 2 or s.args[0] != "LOG":
+            raise ProtocolError(f"Unexpected response to StatusLog from device: {s}")
+        # Status might be preceeded by full log warning
+        full_stop = False
+        if s.args[1] == "FULL_STOP":
+            full_stop = True
+            s = self.receive()
+        if s.type != "$PMTK" or len(s.args) != 11 or s.args[0] != "LOG":
+            raise ProtocolError(f"Unexpected response to StatusLog from device: {s}")
 
         # Radio acknowledges StatusLog command
         r = self.receive()
         if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "183", "3"]:
             raise ProtocolError(f"Unexpected StatusLog acknowledgement from device: {r}")
 
+        return {
+            "pages_used": int(s.args[1]),
+            "unknown_header_02": int(s.args[2]),
+            "unknown_header_03": int(s.args[3], 16),
+            "unknown_header_04": int(s.args[4]),
+            "initial_log_interval": int(s.args[5]),
+            "unknown_a": int(s.args[6]),
+            "unknown_b": int(s.args[7]),
+            "unknown_c": int(s.args[8]),
+            "slots_used": int(s.args[9]),
+            "usage_percent": int(s.args[10]),
+            "full_stop": full_stop
+        }
+
+    def read_gps_log(self, progress=False) -> bytes:
+        self.wait_for_ready()
+        raw_log_data = b''
+
+        # Set up log transmission
+        # This is something the original log reader does under unknown circumstances,
+        # but it just makes the radio behave weirdly until reboot.
+        # Log transfer works well without setup on HX870.
+        # self.send("$PMTK", ["251", "115200"])
+        # _ = self.receive()  # Perhaps wait for some response? Doesn't always come.
+
         # ReadLog command to radio
         self.send("$PMTK", ["622", "1"])
 
         # Radio replies with log header
         r = self.receive()
+        # Radio might war again about full log, ignore
         if r.type != "$PMTK" or len(r.args) != 3 or r.args[0] != "LOX" or r.args[1] != "0":
             raise ProtocolError(f"Unexpected log header from device: {r}")
         number_of_lines = int(r.args[2])
@@ -369,11 +402,14 @@ class GenericHXProtocol(object):
         # What follows is a flash memory dump of the log data
         # LOX messages with first arg "1" indicate a log dump line
         # LOX message with first arg "2" indicates end of log
+        last_progress_report = time()
+        if progress:
+            logger.info(f"0 / {number_of_lines} blocks (0%)")
         while True:
             r = self.receive()
             if r.type != "$PMTK" or len(r.args) < 2 or r.args[0] != "LOX" or r.args[1] not in ("1", "2"):
                 raise ProtocolError(f"Unexpected log line from device: {r}")
-            if len(r.args) >= 2 and r.args[1] == "2":
+            if len(r.args) == 2 and r.args[1] == "2":
                 # Received log footer
                 break
             # Received log line with raw data
@@ -381,6 +417,13 @@ class GenericHXProtocol(object):
             raw_waypoint_data = r.args[3:]
             for word in raw_waypoint_data:
                 raw_log_data += unhexlify(word)
+            if progress and time() - last_progress_report > 4:
+                percent_done = int(100.0 * len(received_line_numbers) / number_of_lines)
+                logger.info(f"{len(received_line_numbers)} / {number_of_lines} blocks ({percent_done}%)")
+                last_progress_report = time()
+
+        if progress:
+            logger.info(f"{number_of_lines} / {number_of_lines} blocks (100%)")
 
         # Did we receive the log in order and completely?
         if received_line_numbers != list(range(number_of_lines)):
