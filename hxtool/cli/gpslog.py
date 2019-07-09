@@ -63,9 +63,13 @@ class GpsLogCommand(CliCommand):
             logger.warning("Log is almost full. Consider erasing soon")
 
         if self.args.gpx or self.args.json or self.args.raw or self.args.print:
-            logger.info("Reading GPS log from handset")
-            raw_log_data = hx.comm.read_gps_log(progress=True)
-            logger.info(f"Received {len(raw_log_data)} bytes of raw log data from handset")
+            if stat['slots_used'] > 0 or self.args.raw:
+                logger.info("Reading GPS log from handset")
+                raw_log_data = hx.comm.read_gps_log(progress=True)
+                logger.info(f"Received {len(raw_log_data)} bytes of raw log data from handset")
+            else:
+                logger.info("Nothing to read from handset")
+                raw_log_data = None
         else:
             raw_log_data = None
 
@@ -92,10 +96,15 @@ class GpsLogCommand(CliCommand):
 
 
 def decode_gps_log(data: bytes) -> dict or None:
-    log_header = data[0x00:0x16]
+    if data is None:
+        logger.debug("Nothing to decode")
+        return None
+
+    log_header = data[0:16]
 
     if log_header == b"\xff" * 16:
         # Cleared log without data
+        logger.debug("Not decoding empty log")
         return None
 
     if log_header[:4] != b"\x01\x00\x01\x0b":
@@ -122,6 +131,9 @@ def decode_gps_log(data: bytes) -> dict or None:
 
 def write_gpx(log_data: bytes,  file_name: str) -> int:
     log = decode_gps_log(log_data)
+    if log is None:
+        logger.warning("Log is blank. Not writing empty GPX file")
+        return 0
 
     gpx = gpxpy.gpx.GPX()
 
@@ -152,6 +164,9 @@ def write_gpx(log_data: bytes,  file_name: str) -> int:
 
 def write_json(log_data: bytes, file_name: str) -> int:
     log = decode_gps_log(log_data)
+    if log is None:
+        logger.warning("Log is blank. Not writing empty JSON log")
+        return 0
     for w in log["waypoints"]:
         w["utc_time"] = w["utc_time"].isoformat()
     with open(file_name, "w") as f:
@@ -160,11 +175,17 @@ def write_json(log_data: bytes, file_name: str) -> int:
 
 
 def write_raw(log_data: bytes, file_name: str) -> int:
+    if log_data.startswith(b'\xff' * 16):
+        logger.info("Log is blank")
     with open(file_name, "wb") as f:
         f.write(log_data)
     return 0
 
 
 def dump_log(log_data):
-    pp(decode_gps_log(log_data))
+    log = decode_gps_log(log_data)
+    if log is None:
+        logger.info("Log is blank. Nothing to print")
+        return 0
+    pp(log)
     return 0
