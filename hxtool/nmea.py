@@ -9,13 +9,6 @@ from .protocol import Message, GenericHXProtocol, ProtocolError
 logger = getLogger(__name__)
 
 
-def receive_until(p: GenericHXProtocol, stop: str) -> Message:
-    while True:
-        r = p.receive()
-        if r.type == stop:
-            return r
-
-
 class GenericNMEAProtocol(object):
 
     def __init__(self, protocol: GenericHXProtocol):

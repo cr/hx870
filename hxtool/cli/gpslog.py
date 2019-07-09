@@ -22,9 +22,6 @@ class GpsLogCommand(CliCommand):
 
     @staticmethod
     def setup_args(parser) -> None:
-        parser.add_argument("-e", "--erase",
-                            help="erase GPS log data from device",
-                            action="store_true")
         parser.add_argument("-g", "--gpx",
                             help="file name for GPX export",
                             type=abspath,
@@ -37,6 +34,12 @@ class GpsLogCommand(CliCommand):
                             help="file name for raw log data export",
                             type=abspath,
                             action="store")
+        parser.add_argument("-p", "--print",
+                            help="print log content",
+                            action="store_true")
+        parser.add_argument("-e", "--erase",
+                            help="erase GPS log data from device",
+                            action="store_true")
 
     def run(self):
 
@@ -50,12 +53,24 @@ class GpsLogCommand(CliCommand):
 
         result = 0
 
-        if self.args.gpx or self.args.json or self.args.raw or not self.args.erase:
-            logger.info("Reading log data from handset (takes a while)")
-            raw_log_data = hx.comm.read_gps_log()
+        stat = hx.comm.read_gps_log_status()
+        logger.info(f"Log size {stat['pages_used'] * 4}kB, "
+                    f"{stat['slots_used']} waypoints, "
+                    f"{stat['usage_percent']}% full")
+        if stat["full_stop"]:
+            logger.warning("Log is full. Logging is halted until erased")
+        elif stat['usage_percent'] >= 80:
+            logger.warning("Log is almost full. Consider erasing soon")
+
+        if self.args.gpx or self.args.json or self.args.raw or self.args.print:
+            logger.info("Reading GPS log from handset")
+            raw_log_data = hx.comm.read_gps_log(progress=True)
             logger.info(f"Received {len(raw_log_data)} bytes of raw log data from handset")
         else:
             raw_log_data = None
+
+        if self.args.print:
+            result = max(dump_log(raw_log_data), result)
 
         if self.args.gpx:
             logger.info("Exporting GPX log data to `%s`", self.args.gpx)
@@ -69,9 +84,6 @@ class GpsLogCommand(CliCommand):
             logger.info("Exporting raw log data to `%s`", self.args.raw)
             result = max(write_raw(raw_log_data, self.args.raw), result)
 
-        if not (self.args.gpx or self.args.json or self.args.raw or self.args.erase):
-            result = max(dump_log(raw_log_data), result)
-
         if self.args.erase:
             logger.info("Erasing GPS log data from device")
             hx.comm.erase_gps_log()
@@ -79,8 +91,16 @@ class GpsLogCommand(CliCommand):
         return result
 
 
-def decode_gps_log(data: bytes) -> dict:
+def decode_gps_log(data: bytes) -> dict or None:
     log_header = data[0x00:0x16]
+
+    if log_header == b"\xff" * 16:
+        # Cleared log without data
+        return None
+
+    if log_header[:4] != b"\x01\x00\x01\x0b":
+        logger.warning(f"Unexpected magic bytes in log header: {hexlify(log_header).decode('ascii')}")
+
     bitmap = data[0x16:0x3c]  # bitfield encoding log slot usage: 1 unused, 0: used
     unknown = data[0x3c:0x40]
 
@@ -91,10 +111,7 @@ def decode_gps_log(data: bytes) -> dict:
     }
 
     offset = 0x40
-    while True:
-
-        # FIXME: Work with bitmap
-        # This will likely stop working once the log overflows and there are no more unwritten slots.
+    while offset <= len(data) - 20:
         if data[offset:offset+4] == b"\xff\xff\xff\xff":
             break
         log["waypoints"].append(unpack_log_line(data[offset:offset+20]))
@@ -123,7 +140,8 @@ def write_gpx(log_data: bytes,  file_name: str) -> int:
             longitude=point["longitude"],
             elevation=point["altitude"],
             time=point["utc_time"],
-            speed=point["speed"]
+            speed=point["speed"]  # FIXME: unit of speed is unknown (kn?)
+
         ))
 
     with open(file_name, "w") as f:

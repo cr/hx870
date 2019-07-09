@@ -83,17 +83,16 @@ def unpack_log_line(data: bytes):
         raise protocol.ProtocolError(f"Log line checksum error: {hexlify(data).decode('ascii')}, expected {hex(chk)}")
 
     # tz_code is 02 if log was captured in UTC mode, 04 if localtime mode.
-    # However, timezone offset is not stored anywhere and timestamp is always UTC.
+    # However, timezone offset is not stored anywhere in log and timestamp is always UTC.
 
     return {
         "utc_time": datetime.datetime.utcfromtimestamp(timestamp),
         "tz_code": tz_code,
         "latitude": latitude,
         "longitude": longitude,
-        "altitude": altitude,
-        "speed": speed,
-        "heading": heading,
-        "checksum": checksum
+        "altitude": altitude,  # FIXME: Unit is always meters?
+        "speed": speed,  # FIXME: Is this really speed? What unit is it?
+        "heading": heading
     }
 
 # Snippets for waypoint export
