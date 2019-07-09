@@ -181,11 +181,25 @@ def write_raw(log_data: bytes, file_name: str) -> int:
         f.write(log_data)
     return 0
 
+def to_hm(deg: float) -> (int, float):
+    minutes, minutes_remainder = divmod(deg, 1/60)
+    hours, minutes = divmod(minutes, 60)
+    return int(hours), minutes + 60 * minutes_remainder
 
 def dump_log(log_data):
     log = decode_gps_log(log_data)
     if log is None:
         logger.info("Log is blank. Nothing to print")
         return 0
-    pp(log)
+    for wp in log["waypoints"]:
+        lat_deg, lat_min = to_hm(wp['latitude'])
+        lat_dir = 'N' if lat_deg >= 0 else 'S'
+        lon_deg, lon_min = to_hm(wp['longitude'])
+        lon_dir = 'E' if lat_deg >= 0 else 'W'
+        print(f"{wp['utc_time'].isoformat()}\t"
+              f"{abs(lat_deg):02d}°{lat_min:07.04f}{lat_dir}\t"
+              f"{abs(lon_deg):03d}°{lon_min:07.04f}{lon_dir}\t"
+              f"{wp['altitude']:d}m\t"
+              f"{wp['heading']:3d}°\t"
+              f"{wp['speed']:2d}kn\t")
     return 0
