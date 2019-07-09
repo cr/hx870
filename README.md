@@ -131,17 +131,28 @@ Checksum is XOR reduce over the raw bytes between $ and *.
 * `$PMTK251,115200*1F` - Sent to radio before GPS Log Transfer
 
 * `$PMTK183*38` - StatusLog, sent to radio
-* `$PMTKLOG,1,1,b,127,60,0,0,1,1,0*26` - Radio reply to StatusLog
-
+* `$PMTKLOG,FULL_STOP*3E` Interspersed warning by radio after log commands
+* `$PMTKLOG,8,1,b,127,5,0,0,1,1430,22*1B` - Radio reply to StatusLog
+  * `8`: number 4k flash pages used by log (expect to be transfered)
+  * `1`: unknown from raw log header offset 2
+  * `b`: unknown from raw log header offset 3
+  * `127`: unknown from raw log header offset 4:6
+  * `5`: logger interval (in seconds) when log was started
+  * `0`: unknown
+  * `0`: unknown
+  * `1`: unknown
+  * `1430`: number of log slots used (max. 6432)
+  * `22`: log usage percentage
 * `$PMTK001,183,3*3A` - Radio ACK of StatusLog
 * `$PMTK622,1*29` - ReadLog, sent to radio
 * `$PMTKLOX,0,43*6E` - Radio response with data
+  * Expect 43 `LOX,1` log lines
 * `$PMTKLOX,1,0,0100010B,7F000000,...,FFFFFFF*27` - Log data
 * `$PMTKLOX,1,1,FFFFFFFF,FFFFFFFF,...,FFFFFFF*59` - Log data
 * `$PMTKLOX,1,2,FFFFFFFF,FFFFFFFF,...,FFFFFFF*5A` - Log data
 * `...`
 * `$PMTKLOX,1,42,FFFFFFFF,FFFFFFFF,...,FFFFFFF*6E` - Log data
-* `$PMTKLOX,2*47` - From radio after log data
+* `$PMTKLOX,2*47` - From radio, end of log
 * `$PMTK001,622,3*36` - Radio ACK of ReadLog
 
 * `$PMTK184,1*22` - EraseLog
