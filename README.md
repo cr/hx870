@@ -136,7 +136,7 @@ Checksum is XOR reduce over the raw bytes between $ and *.
   * `8`: number 4k flash pages used by log (expect to be transfered)
   * `1`: unknown from raw log header offset 2
   * `b`: unknown from raw log header offset 3
-  * `127`: unknown from raw log header offset 4:6
+  * `127`: unknown from raw log header offset 4
   * `5`: logger interval (in seconds) when log was started
   * `0`: unknown
   * `0`: unknown
