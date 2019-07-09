@@ -212,11 +212,20 @@ class GenericHXProtocol(object):
 
     def receive(self, ignore_full_stop=True):
         # Radio starts sputtering $PMTK "FULL_STOP" sentences in comms when log is full.
+        # Some firmware versions seem to restart the GPS chip at unexpected moments, resulting
+        # in spurious boot-up messages. These are always ignored.
         while True:
             m = Message(parse=self.read_line())
-            if not ignore_full_stop or not m.is_full_stop():
-                return m
-            logger.debug("Ignoring FULL_STOP warning from radio")
+            if ignore_full_stop and m.is_full_stop():
+                logger.debug("Ignoring FULL_STOP warning from radio")
+                continue
+            if m.type == "$PMTK" and m.args == ["010", "001"]:
+                logger.debug("Ignoring GPS chipset startup message 010,001")
+                continue
+            if m.type == "$PMTK" and m.args == ["011", "MTKGPS"]:
+                logger.debug("Ignoring GPS chipset text message 011,MTKGPS")
+                continue
+            return m
 
     def cmd_mode(self):
         logger.debug("Sending command mode request")
