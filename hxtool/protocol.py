@@ -91,7 +91,7 @@ class Message(object):
             return (self.type + ",".join(self.args) + "*" + check) + "\r\n"
 
     def __bytes__(self):
-        return str(self).encode('ascii')
+        return str(self).encode("ascii")
 
     def __repr__(self):
         return repr(bytes(self))
@@ -119,10 +119,6 @@ class Message(object):
         for message in messages.split("\r\n"):
             if len(message) > 0:
                 yield cls(parse=message)
-
-    def is_full_stop(self):
-        # These may be interspersed in comms and must be easily ignorable
-        return self.type == "$PMTK" and self.args == ["LOG", "FULL_STOP"]
 
 
 class GenericHXProtocol(object):
@@ -156,7 +152,7 @@ class GenericHXProtocol(object):
         # In NMEA mode, an HX device replies with "P" to "P", and with nothing to "?"
         # In CP mode, an HX device replies with "@" to "?", and with nothing to "P"
         # Hence an HX device will reply to "?P" with
-        #   - "P" if it is in NEMA mode, and
+        #   - "P" if it is in NMEA mode, and
         #   - "?" if it is in CP mode
 
         self.conn.flush_input()
@@ -210,20 +206,20 @@ class GenericHXProtocol(object):
     def send(self, message_type, args=None):
         self.write(Message(message_type, args))
 
-    def receive(self, ignore_full_stop=True):
-        # Radio starts sputtering $PMTK "FULL_STOP" sentences in comms when log is full.
-        # Some firmware versions seem to restart the GPS chip at unexpected moments, resulting
-        # in spurious boot-up messages. These are always ignored.
+    def receive(self, ignore_full_stop=True, ignore_text_messages=True, ignore_system_messages=True):
+        # GPS module starts sputtering "FULL_STOP" log messages in comms when log is full.
+        # Some firmware versions seem to restart the GPS module at unexpected moments, resulting
+        # in spurious system and text messages. These are also ignored per default.
         while True:
             m = Message(parse=self.read_line())
-            if ignore_full_stop and m.is_full_stop():
-                logger.debug("Ignoring FULL_STOP warning from radio")
+            if ignore_full_stop and m.type == "$PMTK" and m.args == ["LOG", "FULL_STOP"]:
+                logger.debug(f"Ignoring GPS module FULL_STOP warning {str(m).strip()}")
                 continue
-            if m.type == "$PMTK" and m.args == ["010", "001"]:
-                logger.debug("Ignoring GPS chipset startup message 010,001")
+            if ignore_system_messages and m.type == "$PMTK" and m.args[0] == "010":
+                logger.debug(f"Ignoring GPS module system message {str(m).strip()}")
                 continue
-            if m.type == "$PMTK" and m.args == ["011", "MTKGPS"]:
-                logger.debug("Ignoring GPS chipset text message 011,MTKGPS")
+            if ignore_text_messages and m.type == "$PMTK" and m.args[0] == "011":
+                logger.debug(f"Ignoring GPS module text message {str(m).strip()}")
                 continue
             return m
 
@@ -307,7 +303,7 @@ class GenericHXProtocol(object):
         # directly from its offset in config memory.
         fid = self.get_flash_id()
         if fid in flash_id:
-            logger.debug(f"Device reported expected flash ID {fid}")
+            logger.debug("Device reported expected flash ID %s", fid)
             return True
         else:
             logger.warning(f"Flash ID mismatch. Device reported {fid}, expected {flash_id}")
@@ -326,7 +322,7 @@ class GenericHXProtocol(object):
                 raise ProtocolError("Device did not return status")
             radio_status = r.args[0]
             if radio_status != "00":
-                logger.debug("Waiting for radio, state=%s" % radio_status)
+                logger.debug("Waiting for radio, state=%s", radio_status)
             self.send("#CMDOK")
         if radio_status != "00":
             raise TimeoutError("Device not ready")
@@ -352,6 +348,7 @@ class GenericHXProtocol(object):
             raise ProtocolError("Device did not acknowledge write")
 
     def read_gps_log_status(self) -> dict:
+
         # StatusLog command to radio
         self.send("$PMTK", ["183"])
 
@@ -373,29 +370,65 @@ class GenericHXProtocol(object):
             raise ProtocolError(f"Unexpected StatusLog acknowledgement from device: {r}")
 
         return {
-            "pages_used": int(s.args[1]),
-            "unknown_header_02": int(s.args[2]),
-            "unknown_header_03": int(s.args[3], 16),
-            "unknown_header_04": int(s.args[4]),
-            "initial_log_interval": int(s.args[5]),
-            "unknown_a": int(s.args[6]),
-            "unknown_b": int(s.args[7]),
-            "unknown_c": int(s.args[8]),
+            "pages_used": int(s.args[1]),  # aka Serial#
+            "logging_type": int(s.args[2]),  # 0: overlap, 1: full stop
+            "logging_mode": int(s.args[3], 16),  # 0x8: interval logging
+            "log_content": int(s.args[4]),  # bitmap describing available fields per slot
+            "interval_setting": int(s.args[5]),  # seconds, if interval mode
+            "distance_setting": int(s.args[6]),  # if distance mode, else 0
+            "speed_setting": int(s.args[7]),  # if speed mode, else 0
+            "logging_enabled": int(s.args[8]),  # 0: enabled, 1: disabled
             "slots_used": int(s.args[9]),
             "usage_percent": int(s.args[10]),
             "full_stop": full_stop
         }
 
+    def mtk_sync(self, timeout=5):
+        timeout_time = time() + timeout
+        while time() < timeout_time:
+            self.send("$PMTK", ["000"])
+            while time() < timeout_time:
+                try:
+                    r = self.receive()
+                except TimeoutError:
+                    break
+                if r.type == "$PMTK" and r.args == ["001", "0", "3"]:
+                    return
+        raise TimeoutError("GPS module won't sync. Please reboot the handset")
+
     def read_gps_log(self, progress=False) -> bytes:
         self.wait_for_ready()
         raw_log_data = b''
 
-        # Set up log transmission
-        # This is something the original log reader does under unknown circumstances,
-        # but it just makes the radio behave weirdly until reboot.
-        # Log transfer works well without setup on HX870.
+        # Set up log transmission baudrate
+        #
+        # This is a tricky one:
+        # * If you set it to 9600, the GPS module normally acknowledges the command and life goes on,
+        #   but slowly.
+        # * If you set it to 115200, the module sometimes responds with a non-standard system message "003",
+        #   and transfer continues at high speed. But it might also just acknowledge the wrong command 225 instead.
+        #   It might also stop responding completely, but behavior is highly unpredictable.
+        # * If you set it to any other value, the module stops responding completely until you remove the battery.
+        #
         # self.send("$PMTK", ["251", "115200"])
-        # _ = self.receive()  # Perhaps wait for some response? Doesn't always come.
+        # r = self.receive()
+        # if r.type != "$PMTK" or r.args != ["001", "225", "3"]:
+        #     raise ProtocolError(f"Unexpected response after setting output baudrate: {r}")
+        #
+        # Massive syncing before and after setting baudrate works most reliably, but it also fails intermittently,
+        # sometimes making the GPS module hang until reboot.
+        #
+        # self.mtk_sync()
+        # self.send("$PMTK", ["251", "115200"])
+        # try:
+        #     r = self.receive()  # may or may not ACK
+        # except TimeoutError:
+        #     continue
+        # self.mtk_sync()
+        # self.mtk_sync()
+        #
+        # The radio behaves so erratically that the best option for now is not setting the baudrate at all
+        # and sticking with the slow, but reliable, default 9600.
 
         # ReadLog command to radio
         self.send("$PMTK", ["622", "1"])
@@ -442,6 +475,18 @@ class GenericHXProtocol(object):
         r = self.receive()
         if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "622", "3"]:
             raise ProtocolError(f"Unexpected ReadLog acknowledgement from device: {r}")
+
+        # If you don't switch back to 9600bd, the GPS module sometimes behaves strangely until reboot.
+        # Sometimes, switching back will make the module hang until reboot.
+        #
+        # self.mtk_sync()
+        # self.send("$PMTK", ["251", "9600"])
+        # try:
+        #     r = self.receive()  # may or may not ACK
+        # except TimeoutError:
+        #     continue
+        # self.mtk_sync()
+        # self.mtk_sync()
 
         return raw_log_data
 

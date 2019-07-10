@@ -3,7 +3,7 @@
 from setuptools import setup, find_packages
 
 PACKAGE_NAME = 'hxtool'
-PACKAGE_VERSION = '0.3.0a4'
+PACKAGE_VERSION = '0.3.0a5'
 
 INSTALL_REQUIRES = [
     'coloredlogs',
