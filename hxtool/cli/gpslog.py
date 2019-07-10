@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from binascii import hexlify
+import datetime
 import gpxpy
 import gpxpy.gpx
 from json import dump
@@ -9,7 +10,7 @@ from os.path import abspath
 
 import hxtool
 from .base import CliCommand
-from hxtool.memory import unpack_log_line
+from hxtool.locus import Locus, LocusError
 
 logger = getLogger(__name__)
 
@@ -62,7 +63,7 @@ class GpsLogCommand(CliCommand):
             logger.warning("Log is almost full. Consider erasing soon")
 
         if self.args.gpx or self.args.json or self.args.raw or self.args.print:
-            if stat['slots_used'] > 0 or self.args.raw:
+            if stat["slots_used"] > 0 or self.args.raw:
                 logger.info("Reading GPS log from handset")
                 raw_log_data = hx.comm.read_gps_log(progress=True)
                 logger.info(f"Received {len(raw_log_data)} bytes of raw log data from handset")
@@ -94,44 +95,10 @@ class GpsLogCommand(CliCommand):
         return result
 
 
-def decode_gps_log(data: bytes) -> dict or None:
-    if data is None:
-        logger.debug("Nothing to decode")
-        return None
-
-    log_header = data[0:16]
-
-    if log_header == b"\xff" * 16:
-        # Cleared log without data
-        logger.debug("Not decoding empty log")
-        return None
-
-    if log_header[:4] != b"\x01\x00\x01\x0b":
-        logger.warning(f"Unexpected magic bytes in log header: {hexlify(log_header).decode('ascii')}")
-
-    bitmap = data[0x16:0x3c]  # bitfield encoding log slot usage: 1 unused, 0: used
-    del bitmap  # Bitmap is only used for the first 201 slots. Dysfunctional legacy?
-    unknown = data[0x3c:0x40]
-
-    log = {
-        "header": hexlify(log_header).decode("ascii"),
-        "unknown": hexlify(unknown).decode("ascii"),
-        "trackpoints": []
-    }
-
-    offset = 0x40
-    while offset <= len(data) - 20:
-        if data[offset:offset+4] == b"\xff\xff\xff\xff":
-            break
-        log["trackpoints"].append(unpack_log_line(data[offset:offset+20]))
-        offset += 20
-
-    return log
-
-
-def write_gpx(log_data: bytes,  file_name: str) -> int:
-    log = decode_gps_log(log_data)
-    if log is None:
+def write_gpx(log_data: bytes, file_name: str) -> int:
+    try:
+        log = Locus(log_data)
+    except LocusError:
         logger.warning("Log is blank. Not writing empty GPX file")
         return 0
 
@@ -146,12 +113,12 @@ def write_gpx(log_data: bytes,  file_name: str) -> int:
     gpx_track.segments.append(gpx_segment)
 
     # Create points:
-    for point in log["trackpoints"]:
+    for point in log:
         p = gpxpy.gpx.GPXTrackPoint(
+            time=datetime.datetime.utcfromtimestamp(point["utc_time"]),
             latitude=point["latitude"],
             longitude=point["longitude"],
-            elevation=point["elevation"],
-            time=point["utc_time"],
+            elevation=point["height"]
         )
         # TODO: Use GPX 1.1 extensions for speed and heading, but which ones?
         # {"nmea:speed": point["speed"] * 3.6 / 1.852}
@@ -165,14 +132,23 @@ def write_gpx(log_data: bytes,  file_name: str) -> int:
 
 
 def write_json(log_data: bytes, file_name: str) -> int:
-    log = decode_gps_log(log_data)
-    if log is None:
+    try:
+        log = Locus(log_data)
+    except LocusError:
         logger.warning("Log is blank. Not writing empty JSON log")
         return 0
-    for w in log["trackpoints"]:
-        w["utc_time"] = w["utc_time"].isoformat()
+    jlog = {
+        "header": hexlify(bytes(log.header)).decode("ascii"),
+        "unknown": hexlify(log.unknown_3c).decode("ascii"),
+        "trackpoints": []
+    }
+    for wp in log:
+        new_wp = {}
+        for k in wp:
+            new_wp[k] = wp[k]
+        jlog["trackpoints"].append(new_wp)
     with open(file_name, "w") as f:
-        dump(log, f, indent=4)
+        dump(jlog, f, indent=4)
     return 0
 
 
@@ -191,19 +167,20 @@ def to_hm(deg: float) -> (int, float):
 
 
 def dump_log(log_data):
-    log = decode_gps_log(log_data)
-    if log is None:
+    try:
+        log = Locus(log_data)
+    except LocusError:
         logger.info("Log is blank. Nothing to print")
         return 0
-    for wp in log["trackpoints"]:
+    for wp in log:
         lat_deg, lat_min = to_hm(wp['latitude'])
         lat_dir = 'N' if lat_deg >= 0 else 'S'
         lon_deg, lon_min = to_hm(wp['longitude'])
         lon_dir = 'E' if lat_deg >= 0 else 'W'
-        print(f"{wp['utc_time'].isoformat()}\t"
+        print(f"{datetime.datetime.utcfromtimestamp(wp['utc_time']).isoformat()}\t"
               f"{abs(lat_deg):02d}°{lat_min:07.04f}{lat_dir}\t"
               f"{abs(lon_deg):03d}°{lon_min:07.04f}{lon_dir}\t"
-              f"{wp['elevation']:d}m\t"
+              f"{wp['height']:d}m\t"
               f"{wp['heading']:3d}°\t"
               f"{wp['speed']:2d}m/s\t")
     return 0
