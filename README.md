@@ -147,8 +147,7 @@ Checksum is XOR reduce over the raw bytes between $ and *.
   * `22`: log usage percentage
 * `$PMTK001,183,3*3A` - Radio ACK of StatusLog
 * `$PMTK622,1*29` - ReadLog, sent to radio
-* `$PMTKLOX,0,43*6E` - Radio response with data
-  * Expect 43 `LOX,1` log lines
+* `$PMTKLOX,0,43*6E` - Radio response with data, expect 43 `LOX,1` log lines
 * `$PMTKLOX,1,0,0100010B,7F000000,...,FFFFFFF*27` - Log data
 * `$PMTKLOX,1,1,FFFFFFFF,FFFFFFFF,...,FFFFFFF*59` - Log data
 * `$PMTKLOX,1,2,FFFFFFFF,FFFFFFFF,...,FFFFFFF*5A` - Log data
@@ -166,18 +165,18 @@ Checksum is XOR reduce over the raw bytes between $ and *.
 
 #### `$PMTK` sentences appearing in firmware 02.03:
 
-* `PMTK183*`
-* `PMTK184,0*`
-* `PMTK185,1*`
-* `PMTK186,1*`
-* `PMTK187,1,1*`
-* `PMTK225,0*`
-* `PMTK251,0*`
-* `PMTK301,0*`
-* `PMTK313,0*`
-* `PMTK386,0*`
-* `PMTK605*`
-* `PMTK622,0*`
+* `PMTK183*`  Query logging status
+* `PMTK184,0*`  Erase logger flash
+* `PMTK185,1*`  Stop logging data
+* `PMTK186,1*`  Snapshot write log
+* `PMTK187,1,1*`  Configure Locus setting, interval mode 1s
+* `PMTK225,0*`  Set periodic power saving mode, normal mode
+* `PMTK251,0*`  Set NMEA baud rate, default
+* `PMTK301,0*`  Set DGPS correction source, none
+* `PMTK313,0*`  Enable or disable SBAS search
+* `PMTK386,0*`  Set speed threshold for static navigation
+* `PMTK605*`  Query firmware release information
+* `PMTK622,0*`  Dump Locus flash data
 
 
 #### Strings appearing in YCE01 firmware flasher
@@ -199,3 +198,9 @@ After a full reboot, those values are replaced by all FF.
 
  - `pytest -v` - running the test suite
  - `pytest --cov=hxtool --cov-report=term` - running test coverage
+
+# Documentation
+
+ - https://www.telit.com/wp-content/uploads/2018/03/1VV0301162_V13_Software_User_Guide_r4.pdf
+ - https://cdn-shop.adafruit.com/datasheets/PMTK+command+packet-Complete-C39-A01.pdf
+ - https://cdn-shop.adafruit.com/datasheets/GTop+LOCUS+Library+User+Manual-v13.pdf
