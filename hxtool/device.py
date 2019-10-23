@@ -81,7 +81,7 @@ def enumerate_model(hx_device) -> list:
 
 class HX870(object):
     """
-    Device object for Standard Horizon HX890 maritime radios
+    Device object for Standard Horizon HX870 maritime radios
     """
     handle = "HX870"
     brand = "Standard Horizon"
