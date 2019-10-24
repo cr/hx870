@@ -19,7 +19,7 @@ def unpack_waypoint(data):
     wp_name = data[16:31].rstrip(b'\xff').decode("ascii")
 
     lat_str = hexlify(data[4:9])[1:]
-    lat_deg = int(lat_str[0:3])
+    lat_deg = int(lat_str[1:3])
     lat_min = int(lat_str[3:9]) / 10000.0
     lat_dir = chr(data[9])
 
@@ -47,7 +47,7 @@ def pack_waypoint(wp):
     lat_dir = m[2]
     lat_min = float(m[3])
     lat_minstr = ("%.04f" % lat_min).replace(".", "").zfill(6)
-    lat_hex = "F%03d%s%s" % (lat_deg, lat_minstr, lat_dir)
+    lat_hex = "FF%02d%s%s" % (lat_deg, lat_minstr, lat_dir)
     if len(lat_hex) != 12:
         raise protocol.ProtocolError("Invalid waypoint latitude format")
 
