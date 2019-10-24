@@ -28,12 +28,17 @@ def unpack_waypoint(data):
     lon_min = int(lon_str[4:10]) / 10000.0
     lon_dir = chr(data[15])
 
+    wp_lat_decimal = { "S": -1.0, "N": 1.0 }[lat_dir] * lat_deg + lat_min / 60.0
+    wp_lon_decimal = { "W": -1.0, "E": 1.0 }[lon_dir] * lon_deg + lon_min / 60.0
+
     wp_latitude = "%d%s%3.4f" % (lat_deg, lat_dir, lat_min)
     wp_longitude = "%d%s%3.4f" % (lon_deg, lon_dir, lon_min)
 
     return {
         "id": wp_id,
         "name": wp_name,
+        "latitude_decimal": wp_lat_decimal,
+        "longitude_decimal": wp_lon_decimal,
         "latitude": wp_latitude,
         "longitude": wp_longitude
     }
