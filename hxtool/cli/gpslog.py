@@ -54,7 +54,7 @@ class GpsLogCommand(CliCommand):
 
         stat = hx.comm.read_gps_log_status()
         logger.info(f"Log size {stat['pages_used'] * 4}kB, "
-                    f"{stat['slots_used']} waypoints, "
+                    f"{stat['slots_used']} trackpoints, "
                     f"{stat['usage_percent']}% full")
         if stat["full_stop"]:
             logger.warning("Log is full. Logging is halted until erased")
@@ -116,14 +116,14 @@ def decode_gps_log(data: bytes) -> dict or None:
     log = {
         "header": hexlify(log_header).decode("ascii"),
         "unknown": hexlify(unknown).decode("ascii"),
-        "waypoints": []
+        "trackpoints": []
     }
 
     offset = 0x40
     while offset <= len(data) - 20:
         if data[offset:offset+4] == b"\xff\xff\xff\xff":
             break
-        log["waypoints"].append(unpack_log_line(data[offset:offset+20]))
+        log["trackpoints"].append(unpack_log_line(data[offset:offset+20]))
         offset += 20
 
     return log
@@ -146,7 +146,7 @@ def write_gpx(log_data: bytes,  file_name: str) -> int:
     gpx_track.segments.append(gpx_segment)
 
     # Create points:
-    for point in log["waypoints"]:
+    for point in log["trackpoints"]:
         p = gpxpy.gpx.GPXTrackPoint(
             latitude=point["latitude"],
             longitude=point["longitude"],
@@ -169,7 +169,7 @@ def write_json(log_data: bytes, file_name: str) -> int:
     if log is None:
         logger.warning("Log is blank. Not writing empty JSON log")
         return 0
-    for w in log["waypoints"]:
+    for w in log["trackpoints"]:
         w["utc_time"] = w["utc_time"].isoformat()
     with open(file_name, "w") as f:
         dump(log, f, indent=4)
@@ -195,7 +195,7 @@ def dump_log(log_data):
     if log is None:
         logger.info("Log is blank. Nothing to print")
         return 0
-    for wp in log["waypoints"]:
+    for wp in log["trackpoints"]:
         lat_deg, lat_min = to_hm(wp['latitude'])
         lat_dir = 'N' if lat_deg >= 0 else 'S'
         lon_deg, lon_min = to_hm(wp['longitude'])
