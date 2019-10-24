@@ -18,10 +18,13 @@ def unpack_waypoint(data):
     if wp_id == 255:
         return None
     wp_name = data[16:31].rstrip(b'\xff').decode("ascii")
+    wp_mmsi = hexlify(data[0:5]).decode()[0:9]
+    if wp_mmsi == "fffffffff":
+        wp_mmsi = None
 
-    lat_str = hexlify(data[4:9])[1:]
-    lat_deg = int(lat_str[0:3])
-    lat_min = int(lat_str[3:9]) / 10000.0
+    lat_str = hexlify(data[5:9])
+    lat_deg = int(lat_str[0:2])
+    lat_min = int(lat_str[2:8]) / 10000.0
     lat_dir = chr(data[9])
 
     lon_str = hexlify(data[10:15])
@@ -29,12 +32,13 @@ def unpack_waypoint(data):
     lon_min = int(lon_str[4:10]) / 10000.0
     lon_dir = chr(data[15])
 
-    wp_latitude = "%d%s%3.4f" % (lat_deg, lat_dir, lat_min)
-    wp_longitude = "%d%s%3.4f" % (lon_deg, lon_dir, lon_min)
+    wp_latitude = "%d%s%07.4f" % (lat_deg, lat_dir, lat_min)
+    wp_longitude = "%d%s%07.4f" % (lon_deg, lon_dir, lon_min)
 
     return {
         "id": wp_id,
         "name": wp_name,
+        "mmsi": wp_mmsi,
         "latitude": wp_latitude,
         "longitude": wp_longitude
     }
