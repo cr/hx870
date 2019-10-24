@@ -21,6 +21,9 @@ def fixture_cp_870_simulator():
     memory[0x4300:0x4310] = unhexlify("9740019080544157174E001235956745")  # waypoint
     memory[0x4310:0x4316] = "WPT001".encode("ascii")
     memory[0x431f] = 0x01  # waypoint id
+    memory[0x4320:0x4330] = unhexlify("FFFFFFFFFF2707433353010917166757")  # waypoint
+    memory[0x4330:0x433f] = "long waypoint 2".encode("ascii")
+    memory[0x433f] = 0x02  # waypoint id
     s = simulator.HXSimulator(config.HX870Config, mode="CP", config=memory)
     s.start()
     yield s
@@ -162,8 +165,15 @@ def test_hx870_waypoints(sim_870_config):
 
     assert waypoints[0]["id"] == 1, "wpt 1 id"
     assert waypoints[0]["name"] == "WPT001", "wpt 1 name"
+    assert waypoints[0]["mmsi"] == "974001908", "wpt 1 mmsi"
     assert waypoints[0]["latitude"] == "54N41.5717", "wpt 1 lat"
     assert waypoints[0]["longitude"] == "12E35.9567", "wpt 1 lon"
+
+    assert waypoints[1]["id"] == 2, "wpt 2 id"
+    assert waypoints[1]["name"] == "long waypoint 2", "wpt 2 name"
+    assert waypoints[1]["mmsi"] is None, "wpt 2 mmsi"
+    assert waypoints[1]["latitude"] == "27S07.4333", "wpt 2 lat"
+    assert waypoints[1]["longitude"] == "109W17.1667", "wpt 2 lon"
 
 
 @pytest.mark.xfail
