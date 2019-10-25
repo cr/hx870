@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from binascii import hexlify
 import gpxpy
 import gpxpy.gpx
 from logging import getLogger
@@ -8,7 +7,6 @@ from os.path import abspath
 
 import hxtool
 from .base import CliCommand
-from hxtool.memory import unpack_log_line
 
 logger = getLogger(__name__)
 
@@ -37,12 +35,9 @@ class NavCommand(CliCommand):
 
         result = 0
 
-        if self.args.gpx or self.args.raw:
+        if self.args.gpx:
                 logger.info("Reading nav data from handset")
-                raw_nav_data = hx.config.read_waypoints()
-                logger.info(f"Received {len(raw_nav_data)} bytes of raw nav data from handset")
-        else:
-            raw_nav_data = None
+                raw_nav_data = hx.config.read_nav_data(True)
 
         if self.args.gpx:
             logger.info("Exporting GPX nav data to `%s`", self.args.gpx)
@@ -51,20 +46,31 @@ class NavCommand(CliCommand):
         return result
 
 
-def write_gpx(waypoints: bytes,  file_name: str) -> int:
-    if waypoints is None:
+def write_gpx(nav_data: dict,  file_name: str) -> int:
+    if len(nav_data["waypoints"]) == 0:
         logger.warning("No waypoints in device. Not writing empty GPX file")
         return 0
 
     gpx = gpxpy.gpx.GPX()
 
-    for point in waypoints:
+    for point in nav_data["waypoints"]:
         p = gpxpy.gpx.GPXWaypoint(
             latitude=point["latitude_decimal"],
             longitude=point["longitude_decimal"],
             name=point["name"],
         )
         gpx.waypoints.append(p)
+    
+    for route in nav_data["routes"]:
+        r = gpxpy.gpx.GPXRoute(name=route["name"])
+        for point in route["points"]:
+            p = gpxpy.gpx.GPXRoutePoint(
+                latitude=point["latitude_decimal"],
+                longitude=point["longitude_decimal"],
+                name=point["name"],
+            )
+            r.points.append(p)
+        gpx.routes.append(r)
 
     with open(file_name, "w") as f:
         f.write(gpx.to_xml(version="1.1"))

@@ -77,6 +77,20 @@ def pack_waypoint(wp):
     return wp_data
 
 
+def unpack_route(data):
+    if data[0x10] == 255:
+        return None
+    name = data[0:0x10].rstrip(b'\xff').decode("ascii")
+    waypoint_ids = []
+    for i in range(0x10, 0x20):
+        if data[i] != 255:
+            waypoint_ids.append(data[i])
+    return {
+        "name": name,
+        "points": waypoint_ids,
+    }
+
+
 region_code_map = {
     0: "INTERNATIONAL",
     1: "UNITED KINGDOM",
