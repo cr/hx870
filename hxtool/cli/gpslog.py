@@ -53,7 +53,10 @@ class GpsLogCommand(CliCommand):
 
         result = 0
 
-        stat = hx.comm.read_gps_log_status()
+        hx.gps.send("$PMTK", ["605"])  # Query GPS module firmware version
+        _ = hx.gps.receive()
+
+        stat = hx.gps.read_log_status()
         logger.info(f"Log size {stat['pages_used'] * 4}kB, "
                     f"{stat['slots_used']} trackpoints, "
                     f"{stat['usage_percent']}% full")
@@ -65,7 +68,7 @@ class GpsLogCommand(CliCommand):
         if self.args.gpx or self.args.json or self.args.raw or self.args.print:
             if stat["slots_used"] > 0 or self.args.raw:
                 logger.info("Reading GPS log from handset")
-                raw_log_data = hx.comm.read_gps_log(progress=True)
+                raw_log_data = hx.gps.read_log(progress=True)
                 logger.info(f"Received {len(raw_log_data)} bytes of raw log data from handset")
             else:
                 logger.info("Nothing to read from handset")
@@ -90,7 +93,7 @@ class GpsLogCommand(CliCommand):
 
         if self.args.erase:
             logger.info("Erasing GPS log data from device")
-            hx.comm.erase_gps_log()
+            hx.gps.erase_log()
 
         return result
 

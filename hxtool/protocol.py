@@ -347,59 +347,32 @@ class GenericHXProtocol(object):
         if r.type != "#CMDOK":
             raise ProtocolError("Device did not acknowledge write")
 
-    def read_gps_log_status(self) -> dict:
 
-        # StatusLog command to radio
-        self.send("$PMTK", ["183"])
+class MediaTekProtocol(object):
 
-        # Radio replies with log status, but listen for full stop warning
-        s = self.receive(ignore_full_stop=False)
-        if s.type != "$PMTK" or len(s.args) < 2 or s.args[0] != "LOG":
-            raise ProtocolError(f"Unexpected response to StatusLog from device: {s}")
-        # Status might be preceeded by full log warning
-        full_stop = False
-        if s.args[1] == "FULL_STOP":
-            full_stop = True
-            s = self.receive()
-        if s.type != "$PMTK" or len(s.args) != 11 or s.args[0] != "LOG":
-            raise ProtocolError(f"Unexpected response to StatusLog from device: {s}")
+    def __init__(self, proto: GenericHXProtocol):
+        self.p = proto
 
-        # Radio acknowledges StatusLog command
-        r = self.receive()
-        if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "183", "3"]:
-            raise ProtocolError(f"Unexpected StatusLog acknowledgement from device: {r}")
+    def send(self, *args, **kwargs):
+        return self.p.send(*args, **kwargs)
 
-        return {
-            "pages_used": int(s.args[1]),  # aka Serial#
-            "logging_type": int(s.args[2]),  # 0: overlap, 1: full stop
-            "logging_mode": int(s.args[3], 16),  # 0x8: interval logging
-            "log_content": int(s.args[4]),  # bitmap describing available fields per slot
-            "interval_setting": int(s.args[5]),  # seconds, if interval mode
-            "distance_setting": int(s.args[6]),  # if distance mode, else 0
-            "speed_setting": int(s.args[7]),  # if speed mode, else 0
-            "logging_enabled": int(s.args[8]),  # 0: enabled, 1: disabled
-            "slots_used": int(s.args[9]),
-            "usage_percent": int(s.args[10]),
-            "full_stop": full_stop
-        }
+    def receive(self, *args, **kwargs):
+        return self.p.receive(*args, **kwargs)
 
-    def mtk_sync(self, timeout=5):
+    def sync(self, timeout=5):
         timeout_time = time() + timeout
         while time() < timeout_time:
-            self.send("$PMTK", ["000"])
+            self.p.send("$PMTK", ["000"])
             while time() < timeout_time:
                 try:
-                    r = self.receive()
+                    r = self.p.receive()
                 except TimeoutError:
                     break
                 if r.type == "$PMTK" and r.args == ["001", "0", "3"]:
                     return
         raise TimeoutError("GPS module won't sync. Please reboot the handset")
 
-    def read_gps_log(self, progress=False) -> bytes:
-        self.wait_for_ready()
-        raw_log_data = b''
-
+    def set_baudrate(self, rate: int):
         # Set up log transmission baudrate
         #
         # This is a tricky one:
@@ -417,18 +390,59 @@ class GenericHXProtocol(object):
         #
         # Massive syncing before and after setting baudrate works most reliably, but it also fails intermittently,
         # sometimes making the GPS module hang until reboot.
-        #
-        # self.mtk_sync()
-        # self.send("$PMTK", ["251", "115200"])
-        # try:
-        #     r = self.receive()  # may or may not ACK
-        # except TimeoutError:
-        #     continue
-        # self.mtk_sync()
-        # self.mtk_sync()
-        #
+
+        self.sync()
+        self.p.send("$PMTK", ["251", str(rate)])
+        try:
+            _ = self.receive()  # may or may not ACK
+        except TimeoutError:
+            pass
+        self.sync()
+        self.sync()
+
+    def read_log_status(self) -> dict:
+
+        # StatusLog command to radio
+        self.send("$PMTK", ["183"])
+
+        # Radio replies with log status, but listen for full stop warning
+        s = self.receive(ignore_full_stop=False)
+        if s.type != "$PMTK" or len(s.args) < 2 or s.args[0] != "LOG":
+            raise ProtocolError(f"Unexpected response to StatusLog from device: {str(s).strip()}")
+        # Status might be preceeded by full log warning
+        full_stop = False
+        if s.args[1] == "FULL_STOP":
+            full_stop = True
+            s = self.receive()
+        if s.type != "$PMTK" or len(s.args) != 11 or s.args[0] != "LOG":
+            raise ProtocolError(f"Unexpected response to StatusLog from device: {str(s).strip()}")
+
+        # Radio acknowledges StatusLog command
+        r = self.receive()
+        if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "183", "3"]:
+            raise ProtocolError(f"Unexpected StatusLog acknowledgement from device: {str(r).strip()}")
+
+        return {
+            "pages_used": int(s.args[1]),  # aka Serial#
+            "logging_type": int(s.args[2]),  # 0: overlap, 1: full stop
+            "logging_mode": int(s.args[3], 16),  # 0x8: interval logging
+            "log_content": int(s.args[4]),  # bitmap describing available fields per slot
+            "interval_setting": int(s.args[5]),  # seconds, if interval mode
+            "distance_setting": int(s.args[6]),  # if distance mode, else 0
+            "speed_setting": int(s.args[7]),  # if speed mode, else 0
+            "logging_enabled": int(s.args[8]),  # 0: enabled, 1: disabled
+            "slots_used": int(s.args[9]),
+            "usage_percent": int(s.args[10]),
+            "full_stop": full_stop
+        }
+
+    def read_log(self, progress=False) -> bytes:
+        raw_log_data = b''
+        self.sync()
+
         # The radio behaves so erratically that the best option for now is not setting the baudrate at all
         # and sticking with the slow, but reliable, default 9600.
+        # self.set_baudrate(115200)
 
         # ReadLog command to radio
         self.send("$PMTK", ["622", "1"])
@@ -437,7 +451,7 @@ class GenericHXProtocol(object):
         r = self.receive()
         # Radio might war again about full log, ignore
         if r.type != "$PMTK" or len(r.args) != 3 or r.args[0] != "LOX" or r.args[1] != "0":
-            raise ProtocolError(f"Unexpected log header from device: {r}")
+            raise ProtocolError(f"Unexpected log header from device: {str(r).strip()}")
         number_of_lines = int(r.args[2])
         received_line_numbers = []
 
@@ -450,7 +464,7 @@ class GenericHXProtocol(object):
         while True:
             r = self.receive()
             if r.type != "$PMTK" or len(r.args) < 2 or r.args[0] != "LOX" or r.args[1] not in ("1", "2"):
-                raise ProtocolError(f"Unexpected log line from device: {r}")
+                raise ProtocolError(f"Unexpected log line from device: {str(r).strip()}")
             if len(r.args) == 2 and r.args[1] == "2":
                 # Received log footer
                 break
@@ -474,7 +488,7 @@ class GenericHXProtocol(object):
         # Radio acknowledges ReadLog command
         r = self.receive()
         if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "622", "3"]:
-            raise ProtocolError(f"Unexpected ReadLog acknowledgement from device: {r}")
+            raise ProtocolError(f"Unexpected ReadLog acknowledgement from device: {str(r).strip()}")
 
         # If you don't switch back to 9600bd, the GPS module sometimes behaves strangely until reboot.
         # Sometimes, switching back will make the module hang until reboot.
@@ -490,11 +504,11 @@ class GenericHXProtocol(object):
 
         return raw_log_data
 
-    def erase_gps_log(self):
+    def erase_log(self):
         # EraseLog command to radio
         self.send("$PMTK", ["184", "1"])
 
         # Radio acknowledges StatusLog command
         r = self.receive()
         if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "184", "3"]:
-            raise ProtocolError(f"Unexpected EraseLog acknowledgement from device: {r}")
+            raise ProtocolError(f"Unexpected EraseLog acknowledgement from device: {str(r).strip()}")
