@@ -22,9 +22,9 @@ def unpack_waypoint(data):
     if wp_mmsi == "fffffffff":
         wp_mmsi = None
 
-    lat_str = hexlify(data[4:9])[1:]
-    lat_deg = int(lat_str[1:3])
-    lat_min = int(lat_str[3:9]) / 10000.0
+    lat_str = hexlify(data[5:9])
+    lat_deg = int(lat_str[0:2])
+    lat_min = int(lat_str[2:8]) / 10000.0
     lat_dir = chr(data[9])
 
     lon_str = hexlify(data[10:15])
