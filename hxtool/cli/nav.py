@@ -68,7 +68,7 @@ class NavCommand(CliCommand):
         if self.args.flash:
             if self.args.gpx:
                 logger.info("Reading GPX nav data from `{}`".format(self.args.gpx))
-                raise NotImplementedError
+                nav_data = read_gpx(self.args.gpx)
 
             logger.info(log_nav_data("Read {w} waypoint{ws} and {r} route{rs} from file", nav_data))
             if self.args.erase:
@@ -84,7 +84,7 @@ class NavCommand(CliCommand):
             return 10
         
         logger.info("Writing nav data to handset")
-        raise NotImplementedError
+        hx.config.write_nav_data(nav_data, True)
 
         return 0
 
@@ -107,6 +107,42 @@ def nav_data_oversized(nav_data: dict, hx: object) -> bool:
         logger.critical("Too many routes to fit on device (maximum: {})".format(limits["routes"]))
         oversized = True
     return oversized
+
+
+def read_gpx(file_name: str) -> dict:
+    gpx = gpxpy.parse(open(file_name, 'r'))
+    nav_data = { "waypoints": [], "routes": [] }
+    index = 0
+    # Known issue: Route/waypoint relationships read from device are not
+    # stored in GPX, resulting in a profliferation of duplicate waypoints
+    # when routes that had been dumped from the device are flashed back.
+    # See GH #30 for a brief discussion of possible solutions.
+
+    for p in gpx.waypoints:
+        index += 1
+        point = {
+            "latitude": p.latitude,
+            "longitude": p.longitude,
+            "name": p.name,
+            "id": index,
+        }
+        nav_data["waypoints"].append(point)
+
+    for r in gpx.routes:
+        route = { "name": r.name, "points": [] }
+        for p in r.points:
+            index += 1
+            point = {
+                "latitude": p.latitude,
+                "longitude": p.longitude,
+                "name": p.name,
+                "id": index,
+            }
+            route["points"].append(point)
+            nav_data["waypoints"].append(point)
+        nav_data["routes"].append(route)
+
+    return nav_data
 
 
 def write_gpx(nav_data: dict,  file_name: str) -> int:

@@ -3,7 +3,7 @@
 from binascii import hexlify, unhexlify
 from logging import getLogger
 
-from .memory import unpack_waypoint, unpack_route
+from .memory import unpack_waypoint, pack_waypoint, unpack_route, pack_route
 from .protocol import GenericHXProtocol, ProtocolError
 
 logger = getLogger(__name__)
@@ -97,6 +97,30 @@ class GenericHXConfig(object):
             "waypoints": waypoints,
             "routes": routes,
         }
+
+    def write_nav_data(self, nav_data, progress=False):
+        config = b''
+        if len(nav_data["waypoints"]) > 200:
+            raise ProtocolError("Too many waypoints")
+        for waypoint in nav_data["waypoints"]:
+            config += pack_waypoint(waypoint)
+        while len(config) < 200 * 0x20:
+            config += b'\xff'*0x20
+        for route in nav_data["routes"]:
+            config += pack_route(route)
+        while len(config) < 200 * 0x20 + 20 * 0x20:
+            config += b'\xff'*0x20
+        
+        config_size = len(config)  # 0x5e80 - 0x4300
+        for offset in range(0, config_size, 0x40):
+            self.p.write_config_memory(0x4300 + offset, config[offset:offset+0x40])
+            if progress and offset % 0xdc0 == 0:  # 50%
+                percent_done = int(100.0 * offset / config_size)
+                logger.info(f"{offset} / {config_size} bytes ({percent_done}%)")
+        if progress:
+            logger.info(f"{config_size} / {config_size} bytes (100%)")
+        
+        # TODO: Always clear nav history
 
     def read_mmsi(self):
         data = hexlify(self.p.read_config_memory(0x00b0, 6)).decode().upper()
