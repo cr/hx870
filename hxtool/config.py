@@ -91,11 +91,17 @@ class GenericHXConfig(object):
                     # unpack_route() just returns waypoint IDs; replace those with the actual waypoints
                     rt["points"][i] = waypoints[wp_index[ rt["points"][i] ]]
                 routes.append(rt)
+        status = self.p.read_config_memory(0x0005, 1)
+        waypoint_history = self.p.read_config_memory(0x05e0, 6)
+        route_history = self.p.read_config_memory(0x05f0, 6)
         if progress:
             logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
         return {
             "waypoints": waypoints,
             "routes": routes,
+            "status": list(status)[0],
+            "waypoint_history": list(filter(lambda x: x != 0xff, waypoint_history)),
+            "route_history": list(filter(lambda x: x != 0xff, route_history)),
         }
 
     def write_nav_data(self, nav_data, progress=False):
@@ -117,10 +123,15 @@ class GenericHXConfig(object):
             if progress and offset % 0xdc0 == 0:  # 50%
                 percent_done = int(100.0 * offset / config_size)
                 logger.info(f"{offset} / {config_size} bytes ({percent_done}%)")
+
+        if "status" in nav_data or "waypoint_history" in nav_data or "route_history" in nav_data:
+            raise NotImplementedError
+        self.p.write_config_memory(0x0005, b'\x00')
+        self.p.write_config_memory(0x05e0, b'\xff'*6)
+        self.p.write_config_memory(0x05f0, b'\xff'*6)
+
         if progress:
             logger.info(f"{config_size} / {config_size} bytes (100%)")
-        
-        # TODO: Always clear nav history
 
     def read_mmsi(self):
         data = hexlify(self.p.read_config_memory(0x00b0, 6)).decode().upper()
