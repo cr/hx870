@@ -2,8 +2,10 @@
 
 import gpxpy
 import gpxpy.gpx
+from datetime import datetime
 from logging import getLogger
 from os.path import abspath
+from pkg_resources import require
 
 import hxtool
 from .base import CliCommand
@@ -58,7 +60,9 @@ class NavCommand(CliCommand):
             logger.info("Reading nav data from handset")
             raw_nav_data = hx.config.read_nav_data(True)
             logger.info("Writing GPX nav data to `{}`".format(self.args.gpx))
-            return write_gpx(raw_nav_data, self.args.gpx)
+            gpx_name = "Nav data read from {} with MMSI {}".format(
+                       hx.__class__.__name__, hx.config.read_mmsi()[0] )
+            return write_gpx(raw_nav_data, self.args.gpx, gpx_name)
         return 0
 
 
@@ -145,12 +149,15 @@ def read_gpx(file_name: str) -> dict:
     return nav_data
 
 
-def write_gpx(nav_data: dict,  file_name: str) -> int:
+def write_gpx(nav_data: dict, file_name: str, gpx_name: str) -> int:
     if len(nav_data["waypoints"]) == 0:
         logger.warning("No waypoints in device. Not writing empty GPX file")
         return 0
 
     gpx = gpxpy.gpx.GPX()
+    gpx.name = gpx_name
+    gpx.creator = "hxtool {} - github.com/cr/hx870".format(require("hxtool")[0].version)
+    gpx.time = datetime.now()
 
     for point in nav_data["waypoints"]:
         comment = "id {}".format(point["id"])
