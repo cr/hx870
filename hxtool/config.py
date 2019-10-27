@@ -14,6 +14,12 @@ class GenericHXConfig(object):
     def __init__(self, protocol: GenericHXProtocol):
         self.p = protocol
 
+    def limits(self):
+        return {
+            "waypoints": 200,
+            "routes": 20,
+        }
+
     def config_read(self, progress=False):
         config_data = b''
         bytes_to_go = 0x8000

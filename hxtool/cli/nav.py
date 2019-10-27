@@ -48,7 +48,7 @@ class NavCommand(CliCommand):
             result = max(self.dump(hx), result)
 
         if self.args.flash or self.args.erase:
-            raise NotImplementedError
+            result = max(self.flash_erase(hx), result)
 
         return result
 
@@ -60,6 +60,53 @@ class NavCommand(CliCommand):
             logger.info("Writing GPX nav data to `{}`".format(self.args.gpx))
             return write_gpx(raw_nav_data, self.args.gpx)
         return 0
+
+
+    def flash_erase(self, hx):
+        nav_data = { "waypoints": [], "routes": [] }
+
+        if self.args.flash:
+            if self.args.gpx:
+                logger.info("Reading GPX nav data from `{}`".format(self.args.gpx))
+                raise NotImplementedError
+
+            logger.info(log_nav_data("Read {w} waypoint{ws} and {r} route{rs} from file", nav_data))
+            if self.args.erase:
+                logger.info("Will replace nav data on device")
+            else:
+                logger.info("Will append to nav data on device")
+
+                logger.info("Reading nav data from handset")
+                raise NotImplementedError
+
+        logger.info(log_nav_data("In total {w} waypoint{ws} and {r} route{rs}", nav_data))
+        if nav_data_oversized(nav_data, hx):
+            return 10
+        
+        logger.info("Writing nav data to handset")
+        raise NotImplementedError
+
+        return 0
+
+
+def log_nav_data(text: str, nav_data: dict) -> str:
+    waypoint_count = len(nav_data["waypoints"])
+    route_count = len(nav_data["routes"])
+    return text.format(
+            w = waypoint_count, ws = "s" if waypoint_count != 1 else "",
+            r = route_count,    rs = "s" if route_count != 1 else "" )
+
+
+def nav_data_oversized(nav_data: dict, hx: object) -> bool:
+    limits = hx.config.limits()
+    oversized = False
+    if len(nav_data["waypoints"]) > limits["waypoints"]:
+        logger.critical("Too many waypoints to fit on device (maximum: {})".format(limits["waypoints"]))
+        oversized = True
+    if len(nav_data["routes"]) > limits["routes"]:
+        logger.critical("Too many routes to fit on device (maximum: {})".format(limits["routes"]))
+        oversized = True
+    return oversized
 
 
 def write_gpx(nav_data: dict,  file_name: str) -> int:
