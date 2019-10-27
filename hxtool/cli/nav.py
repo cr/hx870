@@ -19,9 +19,18 @@ class NavCommand(CliCommand):
     @staticmethod
     def setup_args(parser) -> None:
         parser.add_argument("-g", "--gpx",
-                            help="file name for GPX export",
+                            help="name of GPX file",
                             type=abspath,
                             action="store")
+        parser.add_argument("-d", "--dump",
+                            help="read nav data from device and write to file",
+                            action="store_true")
+        parser.add_argument("-f", "--flash",
+                            help="read nav data from file and write to device",
+                            action="store_true")
+        parser.add_argument("-e", "--erase",
+                            help="erase existing nav data from device",
+                            action="store_true")
 
     def run(self):
 
@@ -34,16 +43,23 @@ class NavCommand(CliCommand):
             return 10
 
         result = 0
+        
+        if self.args.dump:
+            result = max(self.dump(hx), result)
 
-        if self.args.gpx:
-                logger.info("Reading nav data from handset")
-                raw_nav_data = hx.config.read_nav_data(True)
-
-        if self.args.gpx:
-            logger.info("Exporting GPX nav data to `%s`", self.args.gpx)
-            result = max(write_gpx(raw_nav_data, self.args.gpx), result)
+        if self.args.flash or self.args.erase:
+            raise NotImplementedError
 
         return result
+
+
+    def dump(self, hx):
+        if self.args.gpx:
+            logger.info("Reading nav data from handset")
+            raw_nav_data = hx.config.read_nav_data(True)
+            logger.info("Writing GPX nav data to `{}`".format(self.args.gpx))
+            return write_gpx(raw_nav_data, self.args.gpx)
+        return 0
 
 
 def write_gpx(nav_data: dict,  file_name: str) -> int:
