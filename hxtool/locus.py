@@ -35,7 +35,7 @@ _LocusContentMap = {
     LocusContent.VALID: (1, LocusContent.VALID, "Fix Type", 1, "B"),
     LocusContent.LAT: (2, LocusContent.LAT, "Latitude", 4, "f"),
     LocusContent.LON: (3, LocusContent.LON, "Longitude", 4, "f"),
-    LocusContent.HGT: (4, LocusContent.HGT, "Height", 2, "H"),
+    LocusContent.HGT: (4, LocusContent.HGT, "Height", 2, "h"),
     LocusContent.SPD: (5, LocusContent.SPD, "Speed", 2, "H"),
     LocusContent.TRK: (6, LocusContent.TRK, "Heading", 2, "H"),
     LocusContent.HDOP: (7, LocusContent.HDOP, "Precision", 2, "H"),  # Horizontal Dilution of Precision
