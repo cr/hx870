@@ -18,6 +18,9 @@ def unpack_waypoint(data):
     if wp_id == 255:
         return None
     wp_name = data[16:31].rstrip(b'\xff').decode("ascii")
+    wp_mmsi = hexlify(data[0:5]).decode()[0:9]
+    if wp_mmsi == "fffffffff":
+        wp_mmsi = None
 
     lat_str = hexlify(data[4:9])[1:]
     lat_deg = int(lat_str[1:3])
@@ -38,6 +41,7 @@ def unpack_waypoint(data):
     return {
         "id": wp_id,
         "name": wp_name,
+        "mmsi": wp_mmsi,
         "latitude_decimal": wp_lat_decimal,
         "longitude_decimal": wp_lon_decimal,
         "latitude": wp_latitude,
@@ -61,8 +65,8 @@ def pack_waypoint(wp):
         raise protocol.ProtocolError("Invalid waypoint latitude format")
 
     lat_minstr = ("%.04f" % lat_min).replace(".", "").zfill(6)
-    lat_hex = "FF%02d%s%02x" % (lat_deg, lat_minstr, ord(lat_dir))
-    if len(lat_hex) != 12:
+    lat_hex = "%02d%s%02x" % (lat_deg, lat_minstr, ord(lat_dir))
+    if len(lat_hex) != 10:
         raise protocol.ProtocolError("Invalid waypoint latitude format")
 
     if isinstance(wp["longitude"], float):
@@ -84,7 +88,9 @@ def pack_waypoint(wp):
     if len(lon_hex) != 12:
         raise protocol.ProtocolError("Invalid waypoint longitude format")
 
-    wp_data = b'\xff'*4
+    wp_data = b'\xff'*5
+    if "mmsi" in wp and wp["mmsi"] is not None:
+        wp_data = unhexlify(wp["mmsi"] + "0")
     wp_data += unhexlify(lat_hex) + unhexlify(lon_hex)
     wp_data += wp["name"].encode("ascii")[:15].ljust(15, b'\xff')
     wp_data += unhexlify("%02x" % wp["id"])  # TODO: There must be an elegant way

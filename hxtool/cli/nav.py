@@ -153,20 +153,28 @@ def write_gpx(nav_data: dict,  file_name: str) -> int:
     gpx = gpxpy.gpx.GPX()
 
     for point in nav_data["waypoints"]:
+        comment = "id {}".format(point["id"])
+        if point["mmsi"] is not None:
+            comment += "; position received from MMSI {}".format(point["mmsi"])
         p = gpxpy.gpx.GPXWaypoint(
             latitude=point["latitude_decimal"],
             longitude=point["longitude_decimal"],
             name=point["name"],
+            comment=comment,
         )
         gpx.waypoints.append(p)
-    
+
     for route in nav_data["routes"]:
         r = gpxpy.gpx.GPXRoute(name=route["name"])
         for point in route["points"]:
+            comment = "id {}".format(point["id"])
+            if point["mmsi"] is not None:
+                comment += "; position received from MMSI {}".format(point["mmsi"])
             p = gpxpy.gpx.GPXRoutePoint(
                 latitude=point["latitude_decimal"],
                 longitude=point["longitude_decimal"],
                 name=point["name"],
+                comment=comment,
             )
             r.points.append(p)
         gpx.routes.append(r)
