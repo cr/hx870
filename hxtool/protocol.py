@@ -293,7 +293,7 @@ class GenericHXProtocol(object):
         # return cmdnd.args[0]
 
         # But this implements the check via a direct config flash read that works nonetheless:
-        return self.read_config_memory(0x100, 10).rstrip(b"\xff").decode("ascii")
+        return self.read_config_memory(0x100, 10).rstrip(b"\x00\xff").decode("ascii")
 
     def check_flash_id(self, flash_id: list):
         # This function would normally use the use the low-level implementation
