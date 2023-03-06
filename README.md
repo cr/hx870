@@ -204,3 +204,4 @@ After a full reboot, those values are replaced by all FF.
  - https://www.telit.com/wp-content/uploads/2018/03/1VV0301162_V13_Software_User_Guide_r4.pdf
  - https://cdn-shop.adafruit.com/datasheets/PMTK+command+packet-Complete-C39-A01.pdf
  - https://cdn-shop.adafruit.com/datasheets/GTop+LOCUS+Library+User+Manual-v13.pdf
+ - https://simcomturkiye.com/pdf/GNSS/SIM28/Locus_Manual_for_MTK_GNSS_Platform_V1.00.pdf 
