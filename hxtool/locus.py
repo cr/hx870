@@ -43,6 +43,9 @@ _LocusContentMap = {
 }
 
 
+_SECTOR_SIZE = 0x1000
+
+
 def locus_content_descriptor(content: int) -> dict:
     content_size = 0
     fmt_str = "<"
@@ -88,8 +91,7 @@ class LocusHeader(object):
         if len(data) < 16:
             raise LocusError("Insufficient data for parsing header")
         (
-            self.unknown_00,
-            self.unknown_01,
+            self.SectorId,
             self.LoggingType,
             self.LoggingMode,
             self.LogContent,
@@ -99,14 +101,13 @@ class LocusHeader(object):
             self.SpeedSetting,
             self.unknown_0e,
             self.Checksum
-        ) = unpack("<BBBBHHHHHBB", data[:16])
+        ) = unpack("<HBBHHHHHBB", data[:16])
         if verify and self.Checksum != checksum(data[:15]):
             raise LocusError(f"Invalid header checksum in {hexlify(data).decode('ascii')}")
 
     def __bytes__(self):
-        packed = pack("<BBBBHHHHHB",
-                      self.unknown_00,
-                      self.unknown_01,
+        packed = pack("<HBBHHHHHB",
+                      self.SectorId,
                       self.LoggingType,
                       self.LoggingMode,
                       self.LogContent,
@@ -194,7 +195,7 @@ class LocusLog(object):
         yield from self._waypoints
 
 
-class Locus(object):
+class LocusSector(object):
     def __init__(self, data: bytes, *, verify=True):
         self.header = LocusHeader(data[:0x10], verify=verify)
         self.mask = data[0x10:0x3c]
@@ -211,3 +212,27 @@ class Locus(object):
 
     def __iter__(self):
         yield from self.log
+
+
+class Locus(object):
+    def __init__(self, data: bytes, *, verify=True):
+        self.sectors = []
+        for sector_offset in range(0, len(data), _SECTOR_SIZE):
+            sector_data = data[sector_offset:sector_offset + _SECTOR_SIZE]
+            self.sectors.append(LocusSector(sector_data, verify=verify))
+
+    def __len__(self):
+        return sum(len(sector) for sector in self.sectors)
+
+    def __getitem__(self, item):
+        if type(item) is not int:
+            raise ValueError("log index must be int")
+        sector_index = 0
+        while sector_index < len(self.sectors) and item >= len(self.sectors[sector_index]):
+            item -= len(self.sectors[sector_index])
+            sector_index += 1
+        return self.sectors[sector_index][item]
+
+    def __iter__(self):
+        for sector in self.sectors:
+            yield from sector
