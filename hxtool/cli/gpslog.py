@@ -141,8 +141,6 @@ def write_json(log_data: bytes, file_name: str) -> int:
         logger.warning("Log is blank. Not writing empty JSON log")
         return 0
     jlog = {
-        "header": hexlify(bytes(log.sectors[0].header)).decode("ascii"),
-        "unknown": hexlify(log.sectors[0].unknown_3c).decode("ascii"),
         "trackpoints": []
     }
     for wp in log:
