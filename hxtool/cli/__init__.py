@@ -7,6 +7,7 @@ from . import devices
 from . import gpslog
 from . import id
 from . import info
+from . import nav
 from . import nmea
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "gpslog",
     "id",
     "info",
+    "nav",
     "nmea"
 ]

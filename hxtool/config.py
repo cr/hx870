@@ -3,7 +3,7 @@
 from binascii import hexlify, unhexlify
 from logging import getLogger
 
-from .memory import unpack_waypoint
+from .memory import unpack_waypoint, pack_waypoint, unpack_route, pack_route
 from .protocol import GenericHXProtocol, ProtocolError
 
 logger = getLogger(__name__)
@@ -13,6 +13,12 @@ class GenericHXConfig(object):
 
     def __init__(self, protocol: GenericHXProtocol):
         self.p = protocol
+
+    def limits(self):
+        return {
+            "waypoints": 200,
+            "routes": 20,
+        }
 
     def config_read(self, progress=False):
         config_data = b''
@@ -59,16 +65,73 @@ class GenericHXConfig(object):
             logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
 
     def read_waypoints(self):
-        wp_data = b''
-        for address in range(0x4300, 0x5c00, 0x40):
-            wp_data += self.p.read_config_memory(address, 0x40)
-        wp_list = []
-        for wp_id in range(1, 201):
-            offset = (wp_id - 1) * 32
-            wp = unpack_waypoint(wp_data[offset:offset+32])
+        return self.read_nav_data() ["waypoints"]
+
+    def read_nav_data(self, progress=False):
+        nav_data = b''
+        bytes_to_go = 0x5e80 - 0x4300
+        for offset in range(0x4300, 0x5e80, 0x40):
+            bytes_done = offset - 0x4300
+            nav_data += self.p.read_config_memory(offset, 0x40)
+            if bytes_done % 0xdc0 == 0:  # 50%
+                percent_done = int(100.0 * bytes_done / bytes_to_go)
+                logger.info(f"{bytes_done} / {bytes_to_go} bytes ({percent_done}%)")
+        waypoints = []
+        wp_index = {}
+        for offset in range(0, 200 * 0x20, 0x20):
+            wp = unpack_waypoint(nav_data[offset:offset+0x20])
             if wp is not None:
-                wp_list.append(wp)
-        return wp_list
+                wp_index[wp["id"]] = len(waypoints)
+                waypoints.append(wp)
+        routes = []
+        for offset in range(200 * 0x20, 220 * 0x20, 0x20):
+            rt = unpack_route(nav_data[offset:offset+0x20])
+            if rt is not None:
+                for i in range(0, len(rt["points"])):
+                    # unpack_route() just returns waypoint IDs; replace those with the actual waypoints
+                    rt["points"][i] = waypoints[wp_index[ rt["points"][i] ]]
+                routes.append(rt)
+        status = self.p.read_config_memory(0x0005, 1)
+        waypoint_history = self.p.read_config_memory(0x05e0, 6)
+        route_history = self.p.read_config_memory(0x05f0, 6)
+        if progress:
+            logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
+        return {
+            "waypoints": waypoints,
+            "routes": routes,
+            "status": list(status)[0],
+            "waypoint_history": list(filter(lambda x: x != 0xff, waypoint_history)),
+            "route_history": list(filter(lambda x: x != 0xff, route_history)),
+        }
+
+    def write_nav_data(self, nav_data, progress=False):
+        config = b''
+        if len(nav_data["waypoints"]) > 200:
+            raise ProtocolError("Too many waypoints")
+        for waypoint in nav_data["waypoints"]:
+            config += pack_waypoint(waypoint)
+        while len(config) < 200 * 0x20:
+            config += b'\xff'*0x20
+        for route in nav_data["routes"]:
+            config += pack_route(route)
+        while len(config) < 200 * 0x20 + 20 * 0x20:
+            config += b'\xff'*0x20
+        
+        config_size = len(config)  # 0x5e80 - 0x4300
+        for offset in range(0, config_size, 0x40):
+            self.p.write_config_memory(0x4300 + offset, config[offset:offset+0x40])
+            if progress and offset % 0xdc0 == 0:  # 50%
+                percent_done = int(100.0 * offset / config_size)
+                logger.info(f"{offset} / {config_size} bytes ({percent_done}%)")
+
+        if "status" in nav_data or "waypoint_history" in nav_data or "route_history" in nav_data:
+            raise NotImplementedError
+        self.p.write_config_memory(0x0005, b'\x00')
+        self.p.write_config_memory(0x05e0, b'\xff'*6)
+        self.p.write_config_memory(0x05f0, b'\xff'*6)
+
+        if progress:
+            logger.info(f"{config_size} / {config_size} bytes (100%)")
 
     def read_mmsi(self):
         data = hexlify(self.p.read_config_memory(0x00b0, 6)).decode().upper()
