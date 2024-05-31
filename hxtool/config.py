@@ -11,13 +11,15 @@ logger = getLogger(__name__)
 
 class GenericHXConfig(object):
 
+    CONFIG_SIZE = 0x8000
+
     def __init__(self, protocol: GenericHXProtocol):
         self.p = protocol
 
     def config_read(self, progress=False):
         config_data = b''
-        bytes_to_go = 0x8000
-        for offset in range(0x0000, 0x8000, 0x40):
+        bytes_to_go = self.CONFIG_SIZE
+        for offset in range(0x0000, self.CONFIG_SIZE, 0x40):
             if progress:
                 percent_done = int(100.0 * offset / bytes_to_go)
                 if offset % 0x1000 == 0:
@@ -29,10 +31,10 @@ class GenericHXConfig(object):
 
     def config_write(self, data, check_region=True, progress=False):
         bytes_to_go = len(data)
-        if bytes_to_go != 0x8000:
+        if bytes_to_go != self.CONFIG_SIZE:
             raise ProtocolError("Unexpected config data size")
         magic = self.p.read_config_memory(0x0000, 2)
-        magic_end = self.p.read_config_memory(0x7ffe, 2)
+        magic_end = self.p.read_config_memory(self.CONFIG_SIZE-2, 2)
         if magic != data[:2] or magic_end != data[-2:]:
             raise ProtocolError("Unexpected config magic in device")
         region = self.p.read_config_memory(0x010f, 1)
@@ -48,13 +50,13 @@ class GenericHXConfig(object):
             logger.info(f"0 / {bytes_to_go} bytes (0%)")
         self.p.write_config_memory(0x0002, data[0x0002:0x000f])
         self.p.write_config_memory(0x0010, data[0x0010:0x0040])
-        for offset in range(0x0040, 0x7fc0, 0x40):
+        for offset in range(0x0040, self.CONFIG_SIZE-0x40, 0x40):
             if progress:
                 percent_done = int(100.0 * offset / bytes_to_go)
                 if offset % 0x1000 == 0:
                     logger.info(f"{offset} / {bytes_to_go} bytes ({percent_done}%)")
             self.p.write_config_memory(offset, data[offset:offset+0x40])
-        self.p.write_config_memory(0x7fc0, data[0x7fc0:0x7ffe])
+        self.p.write_config_memory(self.CONFIG_SIZE-0x40, data[self.CONFIG_SIZE-0x40:self.CONFIG_SIZE-2])
         if progress:
             logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
 
@@ -148,4 +150,4 @@ class HX870Config(GenericHXConfig):
 
 
 class HX890Config(GenericHXConfig):
-    pass
+    CONFIG_SIZE = 0x10000

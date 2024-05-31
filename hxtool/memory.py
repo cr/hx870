@@ -106,11 +106,12 @@ region_map = {
     "NONE": 255
 }
 
+
 HX870Segments = {
     "Magic": (0x0000, 0x0004),
     "DeviceSetup": (0x0020, 0x0070),
     "ChannelGroupNames": (0x0070, 0x00b0),
-    "DSCSetup": (0x00b0,0x0100),
+    "DSCSetup": (0x00b0, 0x0100),
     "FlashID": (0x0100, 0x0108),
     "Region": (0x010f, 0x0110),
     "ChannelEnabled": (0x0120, 0x0190),
@@ -119,6 +120,7 @@ HX870Segments = {
     "ChannelSetup": (0x0600, 0x0ba0),
     "ChannelNames": (0x0ba0, 0x3500),
 }
+
 
 def unpack_channels(data: bytes) -> dict:
     channels = {
@@ -135,7 +137,7 @@ def unpack_channels(data: bytes) -> dict:
     for group, offset, length in (
         ("group1", HX870Segments["ChannelSetup"][0] + 0x0000, 96),
         ("group2", HX870Segments["ChannelSetup"][0] + 0x0180, 96),
-        ("group3", HX870Segments["ChannelSetup"][0] + 0x0300, 96)):
+            ("group3", HX870Segments["ChannelSetup"][0] + 0x0300, 96)):
         for i, p in zip(range(length), range(offset, offset + length*4, 4)):
             chid, rxshift, rxtxshift, hpallowed, txallowed, lpdefault, unused, dscshipship = unpack_marine_channel_flags(data[p:p+4])
             if chid == "":  # FIXME: work off enable list
@@ -154,7 +156,7 @@ def unpack_channels(data: bytes) -> dict:
 
     for group, offset, length in (
         ("regional", HX870Segments["ChannelSetup"][0] + 0x04a0, 12),
-        ("expansion", HX870Segments["ChannelSetup"][0] + 0x0500, 20)):
+            ("expansion", HX870Segments["ChannelSetup"][0] + 0x0500, 20)):
         for i, p in zip(range(length), range(offset, offset + length*8, 8)):
             chid, rxfreq, txfreq, lponly, unused4, unused2, hpallowed = unpack_private_channel_flags(data[p:p+8])
             if chid == "":  # FIXME: work off enable list
@@ -168,7 +170,6 @@ def unpack_channels(data: bytes) -> dict:
                 "unused4": unused4,
                 "unused2": unused2,
             })
-    
     channels["weather"]["list"] = names["weather"]
 
     return channels
@@ -210,18 +211,18 @@ def unpack_marine_channel_flags(data: bytes) -> object:
     suffixa = "A" if bool(flags & 0x0100) else ""
     dscshipship = bool(flags & 0x0080)
     prefix = "" if flags & 0x7f == 0x7f else f"{flags & 0x7f:02d}"
-    chid = "" if data[0] == 255 else f"{prefix}{data[0]:02d}{suffixa}{suffixb}"    
+    chid = "" if data[0] == 255 else f"{prefix}{data[0]:02d}{suffixa}{suffixb}"
 
     return chid, rxshift, rxtxshift, hpallowed, txallowed, lpdefault, unused, dscshipship
 
 
-def unpack_channel_group_definition(data:bytes) -> list:
+def unpack_channel_group_definition(data: bytes) -> list:
     """
     0x0 	    channel group enabled 	0x00=no, 0x01=yes
     0x1 	    DSC enabled 	        0x00=no, 0x01=yes
     0x2 	    ATIS enabled 	        0x00=no, 0x01=yes (see note below)
     0x3-0x7 	channel group name      0xff padded
-    0x8-0xf 	model name 	            0xff padded 
+    0x8-0xf 	model name 	            0xff padded
     """
 
     enabled, dsc, atis, name, model = unpack(b'>???5s8s', data)
@@ -270,7 +271,7 @@ def unpack_channel_names(data: bytes) -> object:
         ("group3", 0x1800, 96),
         ("regional", 0x2400, 12),
         ("expansion", 0x2580, 20),
-        ("weather", 0x2820, 10)):
+            ("weather", 0x2820, 10)):
         for p in range(offset, offset + length*16, 16):
             name = data[p:p+16].strip(b'\xff').decode("ascii")
             names[group].append(name)
