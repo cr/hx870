@@ -139,7 +139,8 @@ def unpack_channels(data: bytes) -> dict:
         ("group2", HX870Segments["ChannelSetup"][0] + 0x0180, 96),
             ("group3", HX870Segments["ChannelSetup"][0] + 0x0300, 96)):
         for i, p in zip(range(length), range(offset, offset + length*4, 4)):
-            chid, rxshift, rxtxshift, hpallowed, txallowed, lpdefault, unused, dscshipship = unpack_marine_channel_flags(data[p:p+4])
+            chid, rxshift, rxtxshift, hpallowed, txallowed, lpdefault, unused, dscshipship = \
+              unpack_marine_channel_flags(data[p:p+4])
             if chid == "":  # FIXME: work off enable list
                 continue
             channels[group]["list"].append({
