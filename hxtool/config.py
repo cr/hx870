@@ -3,7 +3,7 @@
 from binascii import hexlify, unhexlify
 from logging import getLogger
 
-from .memory import unpack_waypoint
+from .memory import unpack_waypoint, region_code_map
 from .protocol import GenericHXProtocol, ProtocolError
 
 logger = getLogger(__name__)
@@ -117,6 +117,30 @@ class GenericHXConfig(object):
             raise ProtocolError("Invalid ATIS status")
         data = unhexlify(atis + status)
         self.p.write_config_memory(0x00b6, data)
+
+    def read_atis_enabled(self) -> int:
+        return ord(self.p.read_config_memory(0x00a2, 1))
+
+    def write_atis_enabled(self, state: int):
+        try:
+            b = bytes([state])
+        except ValueError:
+            raise ProtocolError("Invalid ATIS enabled format")
+        if state not in [0, 1]:
+            logger.warning("Unknown ATIS enabled value. Flashing anyway")
+        return self.p.write_config_memory(0x00a2, b)
+
+    def read_region(self) -> int:
+        return ord(self.p.read_config_memory(0x010f, 1))
+
+    def write_region(self, region: int):
+        try:
+            b = bytes([region])
+        except ValueError:
+            raise ProtocolError("Invalid region format")
+        if region not in region_code_map:
+            logger.warning("Unknown region. Flashing anyway")
+        return self.p.write_config_memory(0x010f, b)
 
 
 class HX870Config(GenericHXConfig):

@@ -166,7 +166,7 @@ class HX890(HX870):
 
 class HXSim(HX870):
     """
-    Device object for Standard Horizon HX890 maritime radios
+    Device object for Standard Horizon HX870 maritime radio simulator
     """
     handle = "HXSIM"
     brand = "Standard Horizon"

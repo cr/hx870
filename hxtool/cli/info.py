@@ -36,7 +36,7 @@ class InfoCommand(CliCommand):
             logger.warning(f"Flash ID mismatch. {fid} not in {hx.flash_id}")
         print(f"Flash ID:\t{fid}")
 
-        region_code = ord(hx.comm.read_config_memory(0x010f, 1))  # TODO: move to config
+        region_code = hx.config.read_region()
         region = region_code_map[region_code]
         print(f"Region:\t{region} [{region_code:02x}]")
 
@@ -44,7 +44,7 @@ class InfoCommand(CliCommand):
         print(f"MMSI:\t{mmsi}")
         print(f"MMSI status:\t{mmsi_status}")
 
-        atis_enabled_code = ord(hx.comm.read_config_memory(0x00a2, 1))  # TODO: mode to config
+        atis_enabled_code = hx.config.read_atis_enabled()
         atis_enabled = "ENABLED" if atis_enabled_code == 1 else "DISABLED"
         print(f"ATIS function:\t{atis_enabled} [{atis_enabled_code:02x}]")
 
