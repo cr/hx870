@@ -9,7 +9,8 @@ INSTALL_REQUIRES = [
     'coloredlogs',
     'gpxpy',
     'ipython',
-    'pyserial'
+    'pyserial',
+    'setuptools'
 ]
 
 TESTS_REQUIRE = [
