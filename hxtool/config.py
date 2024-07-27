@@ -2,6 +2,7 @@
 
 from binascii import hexlify, unhexlify
 from logging import getLogger
+from typing import Tuple
 
 from .memory import unpack_waypoint, region_code_map
 from .protocol import GenericHXProtocol, ProtocolError
@@ -139,8 +140,10 @@ class GenericHXConfig(object):
         data = unhexlify(atis + status)
         self.p.write_config_memory(self.ATIS_CODE_OFFSET, data)
 
-    def read_atis_enabled(self) -> int:
-        return ord(self.p.read_config_memory(self.ATIS_ENABLED_OFFSET, 1))
+    def read_atis_enabled(self) -> Tuple[bool, int]:
+        atis_config = ord(self.p.read_config_memory(self.ATIS_ENABLED_OFFSET, 1))
+        atis_enabled = atis_config & 1 == 1
+        return atis_enabled, atis_config
 
     def write_atis_enabled(self, state: int):
         try:
@@ -151,8 +154,10 @@ class GenericHXConfig(object):
             logger.warning("Unknown ATIS enabled value. Flashing anyway")
         return self.p.write_config_memory(self.ATIS_ENABLED_OFFSET, b)
 
-    def read_region(self) -> int:
-        return ord(self.p.read_config_memory(self.REGION_CODE_OFFSET, 1))
+    def read_region(self) -> Tuple[str, int]:
+        region_code = ord(self.p.read_config_memory(self.REGION_CODE_OFFSET, 1))
+        region = region_code_map[region_code]
+        return region, region_code
 
     def write_region(self, region: int):
         try:

@@ -4,7 +4,6 @@ from logging import getLogger
 
 import hxtool
 from .base import CliCommand
-from ..memory import region_code_map
 
 logger = getLogger(__name__)
 
@@ -36,16 +35,15 @@ class InfoCommand(CliCommand):
             logger.warning(f"Flash ID mismatch. {fid} not in {hx.flash_id}")
         print(f"Flash ID:\t{fid}")
 
-        region_code = hx.config.read_region()
-        region = region_code_map[region_code]
+        region, region_code = hx.config.read_region()
         print(f"Region:\t{region} [{region_code:02x}]")
 
         mmsi, mmsi_status = hx.config.read_mmsi()
         print(f"MMSI:\t{mmsi}")
         print(f"MMSI status:\t{mmsi_status}")
 
-        atis_enabled_code = hx.config.read_atis_enabled()
-        atis_enabled = "ENABLED" if atis_enabled_code == 1 else "DISABLED"
+        atis_enabled, atis_enabled_code = hx.config.read_atis_enabled()
+        atis_enabled = "ENABLED" if atis_enabled else "DISABLED"
         print(f"ATIS function:\t{atis_enabled} [{atis_enabled_code:02x}]")
 
         atis, atis_status = hx.config.read_atis()

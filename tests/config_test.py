@@ -130,18 +130,20 @@ def test_hx870_atis(sim_870_config):
     with pytest.raises(protocol.ProtocolError):
         sim_870_config.write_atis(atis="9876543210", status="gh")  # invalid save counter
 
-    atis_config = sim_870_config.read_atis_enabled()
-    assert atis_config == 0, "ATIS disabled"
+    atis_enabled, atis_config = sim_870_config.read_atis_enabled()
+    assert not atis_enabled, "ATIS enabled offset"
+    assert atis_config == 0, "ATIS enabled"
 
     sim_870_config.write_atis_enabled(True)
-    assert sim_870_config.read_atis_enabled() == 1, "ATIS enabled write/read"
+    assert sim_870_config.read_atis_enabled()[0], "ATIS enabled write/read"
 
     with pytest.raises(protocol.ProtocolError):
         sim_870_config.write_atis_enabled(999)
 
 
 def test_hx870_region(sim_870_config):
-    code = sim_870_config.read_region()
+    region, code = sim_870_config.read_region()
+    assert region == "SWEDEN", "region code offset"
     assert code == 4, "region code"
 
     with pytest.raises(protocol.ProtocolError):
@@ -149,7 +151,7 @@ def test_hx870_region(sim_870_config):
         sim_870_config.config_write(data)  # region mismatch
 
     sim_870_config.write_region(0xff)
-    assert sim_870_config.read_region() == 0xff, "region code write/read"
+    assert sim_870_config.read_region()[1] == 0xff, "region code write/read"
 
     with pytest.raises(protocol.ProtocolError):
         data = bytearray(b"\xff" * 0x8000)
@@ -194,7 +196,7 @@ def test_hx870_config(sim_870_config):
     data[0x010f] = 0xff  # region mismatch (will be ignored)
     sim_870_config.config_write(data, check_region=False)
     assert sim_870_config.read_mmsi()[0] == "979348516"
-    assert sim_870_config.read_region() == 0xff
+    assert sim_870_config.read_region()[1] == 0xff
 
     with pytest.raises(protocol.ProtocolError):
         sim_870_config.config_write(b"\xff" * 0x8001)  # wrong data size
