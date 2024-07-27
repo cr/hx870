@@ -49,7 +49,7 @@ class HXSimulator(Thread):
             # Populate config memory
             self.c = bytearray(b"\xff" * self.type.CONFIG_SIZE)
             fid = self.type.FLASH_ID[0].encode("ascii")
-            fid_offset = 0x0100
+            fid_offset = self.type.FLASH_ID_OFFSET
             self.c[fid_offset:fid_offset+len(fid)] = fid
 
         self.master, self.slave = openpty()

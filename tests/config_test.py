@@ -176,7 +176,6 @@ def test_hx870_waypoints(sim_870_config):
     assert waypoints[1]["longitude"] == "109W17.1667", "wpt 2 lon"
 
 
-@pytest.mark.xfail
 def test_hx890_waypoints(sim_890_config):
     waypoints = sim_890_config.read_waypoints()
 
