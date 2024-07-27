@@ -40,7 +40,7 @@ def get_args(args=None):
     parser.add_argument("-m", "--model",
                         help="force device model",
                         type=str.upper,
-                        choices=["HX870", "HX890"],
+                        choices=["HX870", "HX890", "GX1400"],
                         action="store")
 
     parser.add_argument("--simulator",

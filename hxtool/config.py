@@ -189,3 +189,59 @@ class HX891Config(GenericHXConfig):
     FLASH_ID = ["AM070N"]
     WAYPOINT_OFFSET = 0xd700
     WAYPOINT_COUNT = 250
+
+
+class GX1400Config(GenericHXConfig):
+
+    CONFIG_MAGIC = [0x05, 0x78]
+    FLASH_ID = ["AM065N"]
+
+    CHUNK_SIZE = 0x20
+    CONFIG_SIZE = 0x2000
+    PROGRESS_LOG_AT = 0x0800
+
+    MMSI_OFFSET = 0x0060
+    ATIS_CODE_OFFSET = 0x0066
+    ATIS_ENABLED_OFFSET = 0x0052
+    FLASH_ID_OFFSET = 0x0098
+    REGION_CODE_OFFSET = 0x009f
+    WAYPOINT_OFFSET = None
+
+    REGION_CODE_US = 0x00
+    WAYPOINT_COUNT = 0
+
+    def config_write(self, data, check_region=True, progress=False):
+        self._config_write_precheck(data, check_region)
+        bytes_to_go = self.CONFIG_SIZE
+        if progress:
+            logger.info(f"0 / {bytes_to_go} bytes (0%)")
+        # Skip writing the following data to the device:
+        # magic, firmware version, flash ID, unknown 0x00a0-0x00bf, last
+        # turned off fix, serial no, production date, some padding at the end
+        self.p.write_config_memory(0x0002, data[0x0002:0x001d])
+        self.p.write_config_memory(0x0020, data[0x0020:0x0040])
+        self.p.write_config_memory(0x0040, data[0x0040:0x0060])
+        self.p.write_config_memory(0x0060, data[0x0060:0x0080])
+        self.p.write_config_memory(0x0080, data[0x0080:0x0098])
+        self.p.write_config_memory(0x009f, data[0x009f:0x00a0])
+        self.p.write_config_memory(0x00d0, data[0x00d0:0x00f0])
+        self.p.write_config_memory(0x00f0, data[0x00f0:0x0110])
+        for offset in range(0x0120, 0x1fa0, self.CHUNK_SIZE):
+            if progress:
+                percent_done = int(100.0 * offset / bytes_to_go)
+                if offset % self.PROGRESS_LOG_AT == 0:
+                    logger.info(f"{offset} / {bytes_to_go} bytes ({percent_done}%)")
+            self.p.write_config_memory(offset, data[offset:offset+self.CHUNK_SIZE])
+        if progress:
+            logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
+
+    def read_waypoints(self):
+        raise ProtocolError("Waypoints unsupported by GX1400")
+
+    def read_region(self):
+        region_code = ord(self.p.read_config_memory(self.REGION_CODE_OFFSET, 1))
+        try:
+            region = ["USA", "INTL", "UK", "BE", "NL", "SW", "GRM", "JPN"][region_code]
+        except IndexError:
+            region = ""
+        return region, region_code
