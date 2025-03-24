@@ -9,6 +9,7 @@ from threading import Event, Thread
 from time import time
 
 from .protocol import Message
+from .config import GenericHXConfig
 
 logger = getLogger(__name__)
 
@@ -33,14 +34,15 @@ class HXSimulator(Thread):
         for instance in cls.instances:
             instance.join()
 
-    def __init__(self, mode: str, config: bytearray or None = None,
+    def __init__(self, device_type: GenericHXConfig, mode: str, config: bytearray = None,
                  loop_delay: float = None, nmea_delay: float = 3.0):
         super().__init__()
         HXSimulator.register(self)
         self.id = HXSimulator.instances.index(self)
+        self.type = device_type
         assert mode in ["CP", "NMEA"], "Invalid simulator mode"
         self.mode = mode
-        self.c = config or bytearray(b"\xff" * 0x8000)
+        self.c = config or bytearray(b"\xff" * self.type.CONFIG_SIZE)
         self.master, self.slave = openpty()
         self.tty = ttyname(self.slave)
         self.name = f"HXSimulator-{self.id} [{self.tty}]"
@@ -50,6 +52,10 @@ class HXSimulator(Thread):
         # FIXME: This will fail on Windows (probably on import)
         set_blocking(self.master, False)
         self.ignore_cmdok = False
+
+        # Populate config memory
+        fid = self.type.FLASH_ID[0].encode("ascii")
+        self.c[0x100:0x100+len(fid)] = fid
 
     def run(self):
         if self.stop_running.is_set():
@@ -179,7 +185,7 @@ class HXSimulator(Thread):
             if len(data) == size:
                 self.c[offset:offset + size] = data
                 write(self.master, bytes(Message("#CMDOK")))
-                if len(self.c) != 1 << 15:
+                if len(self.c) != self.type.CONFIG_SIZE:
                     logger.critical("CP simulator internal memory corruption after write")
             else:
                 write(self.master, bytes(Message("#CMDER")))

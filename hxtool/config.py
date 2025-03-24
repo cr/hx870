@@ -11,7 +11,9 @@ logger = getLogger(__name__)
 
 class GenericHXConfig(object):
 
+    CONFIG_MAGIC = [0xff, 0xff]
     CONFIG_SIZE = 0x8000
+    FLASH_ID = ["AM000A"]
 
     def __init__(self, protocol: GenericHXProtocol):
         self.p = protocol
@@ -146,8 +148,12 @@ class GenericHXConfig(object):
 
 
 class HX870Config(GenericHXConfig):
-    pass
+    CONFIG_MAGIC = [0x03, 0x67]
+    CONFIG_SIZE = 0x8000
+    FLASH_ID = ["AM057N", "AM057N2"]
 
 
 class HX890Config(GenericHXConfig):
+    CONFIG_MAGIC = [0x03, 0x7a]
     CONFIG_SIZE = 0x10000
+    FLASH_ID = ["AM063N"]

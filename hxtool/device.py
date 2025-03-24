@@ -18,12 +18,18 @@ def enumerate(force_device=None, force_model=None, add_simulator=False):
     devices = []
 
     if add_simulator:
-        sc = HXSimulator(mode="CP")
-        sc.start()
-        devices.append(HXSim(sc.tty))
-        sn = HXSimulator(mode="NMEA")
-        sn.start()
-        devices.append(HXSim(sn.tty))
+        sim = HXSimulator(HX870Config, mode="CP")
+        sim.start()
+        devices.append(HX870Sim(sim.tty))
+        sim = HXSimulator(HX870Config, mode="NMEA")
+        sim.start()
+        devices.append(HX870Sim(sim.tty))
+        sim = HXSimulator(HX890Config, mode="CP")
+        sim.start()
+        devices.append(HX890Sim(sim.tty))
+        sim = HXSimulator(HX890Config, mode="NMEA")
+        sim.start()
+        devices.append(HX890Sim(sim.tty))
 
     if force_device is None and force_model is None:
         for model in models.values():
@@ -90,7 +96,7 @@ class HX870(object):
     usb_vendor_name = "YAESU MUSEN CO.,LTD."
     usb_product_id = 16
     usb_product_name = "HX870"
-    flash_id = ["AM057N", "AM057N2"]
+    flash_id = ["AM057N", "AM057N2"]  # FIXME: Moved to config, remove here
 
     protocol_model = GenericHXProtocol
     config_model = HX870Config
@@ -138,7 +144,7 @@ class HX870(object):
     def cp_mode(self) -> bool:
         return self.comm.cp_mode
 
-    def check_flash_id(self, flash_id: list or None = None):
+    def check_flash_id(self, flash_id: list = None):
         return self.comm.check_flash_id(flash_id or self.flash_id)
 
     def __str__(self):
@@ -156,31 +162,30 @@ class HX890(HX870):
     usb_vendor_name = "YAESU MUSEN CO.,LTD."
     usb_product_id = 30
     usb_product_name = "HX890"
-    flash_id = ["AM063N"]
+    flash_id = ["AM063N"]  # FIXME: Moved to config, remove here
 
-    protocol_model = GenericHXProtocol
     config_model = HX890Config
     nmea_model = HX890NMEAProtocol
-    gps_model = MediaTekProtocol
 
 
-class HXSim(HX870):
+class HX870Sim(HX870):
     """
     Device object for Standard Horizon HX870 maritime radio simulator
     """
-    handle = "HXSIM"
-    brand = "Standard Horizon"
+    handle = "HX870SIM"
     model = "HX870S Simulator"
-    usb_vendor_id = 9898
-    usb_vendor_name = "YAESU MUSEN CO.,LTD."
-    usb_product_id = 3030
+    usb_product_id = 1616
     usb_product_name = "HX870S"
-    flash_id = ["AM057N"]
 
-    protocol_model = GenericHXProtocol
-    config_model = HX870Config
-    nmea_model = HX870NMEAProtocol
-    gps_model = MediaTekProtocol
+
+class HX890Sim(HX890):
+    """
+    Device object for Standard Horizon HX890 maritime radio simulator
+    """
+    handle = "HX890SIM"
+    model = "HX890S Simulator"
+    usb_product_id = 3030
+    usb_product_name = "HX890S"
 
 
 models = {}

@@ -50,7 +50,7 @@ struct _RadioStatus {  // start: 0002
 // 0020 Radio Configuration ----------------------
 FSeek(0x0020);
 
-enum <ubyte> _OffOn { OFF, ON };'
+enum <ubyte> _OffOn { OFF, ON };
 struct _GroupChannelSetup {
     ubyte Status;  // 00=in use  ff=not in use
     ubyte Channel;  // Used as index into channel list (1-based)
