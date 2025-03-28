@@ -141,8 +141,17 @@ def test_hx870_region(sim_870_config):
     code = sim_870_config.read_region()
     assert code == 4, "region code"
 
+    with pytest.raises(protocol.ProtocolError):
+        data = bytearray(b"\xff" * 0x8000)
+        sim_870_config.config_write(data)  # region mismatch
+
     sim_870_config.write_region(0xff)
     assert sim_870_config.read_region() == 0xff, "region code write/read"
+
+    with pytest.raises(protocol.ProtocolError):
+        data = bytearray(b"\xff" * 0x8000)
+        data[0x010f] = 0x01
+        sim_870_config.config_write(data)  # region mismatch
 
     with pytest.raises(protocol.ProtocolError):
         sim_870_config.write_region(0x100)  # too large
