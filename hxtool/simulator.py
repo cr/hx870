@@ -42,7 +42,16 @@ class HXSimulator(Thread):
         self.type = device_type
         assert mode in ["CP", "NMEA"], "Invalid simulator mode"
         self.mode = mode
-        self.c = config or bytearray(b"\xff" * self.type.CONFIG_SIZE)
+        if config:
+            self.c = config
+            assert len(config) == self.type.CONFIG_SIZE, "Invalid config size"
+        else:
+            # Populate config memory
+            self.c = bytearray(b"\xff" * self.type.CONFIG_SIZE)
+            fid = self.type.FLASH_ID[0].encode("ascii")
+            fid_offset = 0x0100
+            self.c[fid_offset:fid_offset+len(fid)] = fid
+
         self.master, self.slave = openpty()
         self.tty = ttyname(self.slave)
         self.name = f"HXSimulator-{self.id} [{self.tty}]"
@@ -52,10 +61,6 @@ class HXSimulator(Thread):
         # FIXME: This will fail on Windows (probably on import)
         set_blocking(self.master, False)
         self.ignore_cmdok = False
-
-        # Populate config memory
-        fid = self.type.FLASH_ID[0].encode("ascii")
-        self.c[0x100:0x100+len(fid)] = fid
 
     def run(self):
         if self.stop_running.is_set():
