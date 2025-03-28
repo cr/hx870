@@ -96,7 +96,6 @@ class HX870(object):
     usb_vendor_name = "YAESU MUSEN CO.,LTD."
     usb_product_id = 16
     usb_product_name = "HX870"
-    flash_id = ["AM057N", "AM057N2"]  # FIXME: Moved to config, remove here
 
     protocol_model = GenericHXProtocol
     config_model = HX870Config
@@ -145,7 +144,7 @@ class HX870(object):
         return self.comm.cp_mode
 
     def check_flash_id(self, flash_id: list = None):
-        return self.comm.check_flash_id(flash_id or self.flash_id)
+        return self.comm.check_flash_id(flash_id or self.config_model.FLASH_ID)
 
     def __str__(self):
         return f"{self.brand} {self.handle} on `{self.tty} [{'CP Mode' if self.comm.cp_mode else 'NMEA Mode'}]`"
@@ -162,7 +161,6 @@ class HX890(HX870):
     usb_vendor_name = "YAESU MUSEN CO.,LTD."
     usb_product_id = 30
     usb_product_name = "HX890"
-    flash_id = ["AM063N"]  # FIXME: Moved to config, remove here
 
     config_model = HX890Config
     nmea_model = HX890NMEAProtocol
