@@ -40,8 +40,8 @@ class GenericHXConfig(object):
         if magic != data[:2] or magic_end != data[-2:]:
             raise ProtocolError("Unexpected config magic in device")
         region = self.p.read_config_memory(0x010f, 1)
-        region_is_us = region == b'0xff'
-        data_is_us = data[0x010f] == b'0xff'
+        region_is_us = region == b'\xff'
+        data_is_us = data[0x010f] == 0xff
         if region_is_us != data_is_us:
             if check_region:
                 logger.error("Region mismatch")
