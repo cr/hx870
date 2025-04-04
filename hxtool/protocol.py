@@ -306,7 +306,7 @@ class GenericHXProtocol(object):
             logger.debug("Device reported expected flash ID %s", fid)
             return True
         else:
-            logger.warning(f"Flash ID mismatch. Device reported {fid}, expected {flash_id}")
+            logger.debug(f"Flash ID mismatch. Device reported {fid}, expected {flash_id}")
             return False
 
     def wait_for_ready(self, timeout=1):
