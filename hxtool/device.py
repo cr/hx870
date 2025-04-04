@@ -128,9 +128,9 @@ class HX870(object):
         self.config = None
         self.nmea = None
         self.gps = None
-        self.__init_config()
+        self.init_config()
 
-    def __init_config(self):
+    def init_config(self):
         # See what we're talking to on that tty
         if self.comm.hx_hardware:
             if self.comm.cp_mode:
@@ -219,18 +219,7 @@ class GX1400(HX870):
     config_model = GX1400Config
     nmea_model = None
 
-    def __init__(self, tty):
-        # Overriding __init_config() in this class is only possible by
-        # using the name _HX870__init_config(), which would be confusing.
-        # Therefore, the constructor definition must be repeated here,
-        # even though it's identical to the one in the superclass.
-        self.tty = tty
-        self.comm = self.protocol_model(tty=tty)
-        self.config = None
-        self.nmea = None
-        self.__init_config()
-
-    def __init_config(self):
+    def init_config(self):
         # Verify we're talking to a GX1400 on that tty
         self.comm.hx_hardware = self.check_flash_id()
         if self.comm.hx_hardware and self.comm.cp_mode:
