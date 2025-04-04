@@ -32,7 +32,7 @@ class InfoCommand(CliCommand):
 
         fid = hx.comm.get_flash_id()
         if not hx.check_flash_id():
-            logger.warning(f"Flash ID mismatch. {fid} not in {hx.flash_id}")
+            logger.warning(f"Flash ID mismatch. {fid} not in {hx.config.FLASH_ID}")
         print(f"Flash ID:\t{fid}")
 
         region, region_code = hx.config.read_region()
