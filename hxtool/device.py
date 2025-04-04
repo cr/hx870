@@ -3,7 +3,7 @@
 from logging import getLogger
 from serial.tools import list_ports
 
-from .config import HX870Config, HX890Config
+from .config import HX870Config, HX890Config, HX891Config
 from .nmea import HX870NMEAProtocol, HX890NMEAProtocol
 from .protocol import GenericHXProtocol, MediaTekProtocol
 from .simulator import HXSimulator
@@ -24,12 +24,20 @@ def enumerate(force_device=None, force_model=None, add_simulator=False):
         sim = HXSimulator(HX870Config, mode="NMEA")
         sim.start()
         devices.append(HX870Sim(sim.tty))
+
         sim = HXSimulator(HX890Config, mode="CP")
         sim.start()
         devices.append(HX890Sim(sim.tty))
         sim = HXSimulator(HX890Config, mode="NMEA")
         sim.start()
         devices.append(HX890Sim(sim.tty))
+
+        sim = HXSimulator(HX891Config, mode="CP")
+        sim.start()
+        devices.append(HX891Sim(sim.tty))
+        sim = HXSimulator(HX891Config, mode="NMEA")
+        sim.start()
+        devices.append(HX891Sim(sim.tty))
 
     if force_device is None and force_model is None:
         for model in models.values():
@@ -166,6 +174,22 @@ class HX890(HX870):
     nmea_model = HX890NMEAProtocol
 
 
+class HX891(HX890):
+    """
+    Device object for Standard Horizon HX890 maritime radios
+    """
+    handle = "HX891"
+    brand = "Standard Horizon"
+    model = "HX891BT"
+    usb_vendor_id = 0x26aa
+    usb_vendor_name = "YAESU MUSEN CO.,LTD."
+    usb_product_id = 0x2e
+    usb_product_name = "HX890"
+
+    config_model = HX891Config
+    nmea_model = HX890NMEAProtocol
+
+
 class HX870Sim(HX870):
     """
     Device object for Standard Horizon HX870 maritime radio simulator
@@ -186,7 +210,17 @@ class HX890Sim(HX890):
     usb_product_name = "HX890S"
 
 
+class HX891Sim(HX891):
+    """
+    Device object for Standard Horizon HX891 maritime radio simulator
+    """
+    handle = "HX891SIM"
+    model = "HX891BT Simulator"
+    usb_product_id = 4242
+    usb_product_name = "HX891S"
+
+
 models = {}
-for model_class in HX870, HX890:
+for model_class in HX870, HX890, HX891:
     models[model_class.handle.upper()] = model_class
 del model_class

@@ -181,3 +181,11 @@ class HX890Config(GenericHXConfig):
     FLASH_ID = ["AM063N"]
     WAYPOINT_OFFSET = 0xd700
     WAYPOINT_COUNT = 250
+
+
+class HX891Config(GenericHXConfig):
+    CONFIG_MAGIC = [0x03, 0x7b]
+    CONFIG_SIZE = 0x10000
+    FLASH_ID = ["AM070N"]
+    WAYPOINT_OFFSET = 0xd700
+    WAYPOINT_COUNT = 250

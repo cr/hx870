@@ -46,9 +46,9 @@ def test_simulator_instance(kill_sims):
     del kill_sims
 
     sim_a = simulator.HXSimulator(config.HX870Config, mode="CP", loop_delay=0.001)
-    sim_b = simulator.HXSimulator(config.HX870Config, mode="CP", loop_delay=0.001)
-    sim_c = simulator.HXSimulator(config.HX870Config, mode="CP", loop_delay=0.001)
-    sim_n = simulator.HXSimulator(config.HX870Config, mode="NMEA", nmea_delay=0.03, loop_delay=0.01)
+    sim_b = simulator.HXSimulator(config.HX890Config, mode="CP", loop_delay=0.001)
+    sim_c = simulator.HXSimulator(config.HX891Config, mode="CP", loop_delay=0.001)
+    sim_n = simulator.HXSimulator(config.HX891Config, mode="NMEA", nmea_delay=0.03, loop_delay=0.01)
 
     for sim in sim_a, sim_b, sim_c, sim_n:
         assert sim in simulator.HXSimulator.instances
