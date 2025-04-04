@@ -61,15 +61,10 @@ def enumerate(force_device=None, force_model=None, add_simulator=False):
                 return []
 
         # Device is given as tty spec, so autodetect model
-        for m in [HX891, HX890, HX870, GX1400]:
-            # Waiting for the timeout for each device is a bit crude, but it
-            # gets the job done.
-            try:
-                d = m(force_device)
-                if d.check_flash_id():
-                    return [d]
-            except TimeoutError:
-                logger.warning(f"Timeout when treating {force_device} as {m.handle}")
+        for m in [HX870, HX890]:
+            d = m(force_device)
+            if d.check_flash_id():
+                return [d]
         else:
             logger.warning(f"Unable to detect model listening on {force_device}. Try specifying --model.")
             return []
