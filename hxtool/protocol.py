@@ -516,6 +516,8 @@ class MediaTekProtocol(object):
 
 class GX1400Protocol(GenericHXProtocol):
 
+    baudrate = 38400
+
     def __init__(self, tty=None):
         self.conn = None
         self.connected = False
@@ -525,7 +527,7 @@ class GX1400Protocol(GenericHXProtocol):
         self.__connect(tty)
 
     def __connect(self, tty):
-        self.conn = hxtty.GenericHXTTY(tty, baudrate=38400)
+        self.conn = hxtty.GenericHXTTY(tty, baudrate=self.baudrate)
         self.connected = True
         logger.debug("Attempting GX1400 sync")
         try:
@@ -559,3 +561,23 @@ class GX1400Protocol(GenericHXProtocol):
     def get_flash_id(self):
         self.sync()
         return self.read_config_memory(0x98, 7).rstrip(b"\x00\xff").decode("ascii")
+
+
+class ReadMagicProtocol(GenericHXProtocol):
+
+    def __init__(self, tty=None, baudrate=38400):
+        self.hx_hardware = False
+        try:
+            logger.debug(f"Trying `{tty}` sync at {baudrate} baud")
+            self.conn = hxtty.GenericHXTTY(tty, baudrate=baudrate)
+            self.sync()
+            self.hx_hardware = True
+        except TimeoutError:
+            logger.debug("No response, so probably wrong baudrate or not a supported device")
+            return
+        except ProtocolError:
+            logger.debug("Unexpected response, so probably not a supported device")
+            return
+        except OSError as e:
+            logger.debug(f"OS error: {e} (ignoring, so we can look at other devices)")
+            return
