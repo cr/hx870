@@ -2,6 +2,8 @@
 
 from logging import getLogger
 from serial.tools import list_ports
+import sys
+from typing import Iterable, Tuple, Type
 
 from .config import HX870Config, HX890Config, HX891Config, GX1400Config
 from .nmea import HX870NMEAProtocol, HX890NMEAProtocol
@@ -14,34 +16,14 @@ logger = getLogger(__name__)
 def enumerate(force_device=None, force_model=None, add_simulator=False):
 
     global models
+    model_list = models.values()
 
     devices = []
 
     if add_simulator:
-        sim = HXSimulator(HX870Config, mode="CP")
-        sim.start()
-        devices.append(HX870Sim(sim.tty))
-        sim = HXSimulator(HX870Config, mode="NMEA")
-        sim.start()
-        devices.append(HX870Sim(sim.tty))
-
-        sim = HXSimulator(HX890Config, mode="CP")
-        sim.start()
-        devices.append(HX890Sim(sim.tty))
-        sim = HXSimulator(HX890Config, mode="NMEA")
-        sim.start()
-        devices.append(HX890Sim(sim.tty))
-
-        sim = HXSimulator(HX891Config, mode="CP")
-        sim.start()
-        devices.append(HX891Sim(sim.tty))
-        sim = HXSimulator(HX891Config, mode="NMEA")
-        sim.start()
-        devices.append(HX891Sim(sim.tty))
-
-        sim = HXSimulator(GX1400Config, mode="CP")
-        sim.start()
-        devices.append(GX1400(sim.tty))
+        for model in model_list:
+            devices += model.simulators()
+        devices = [model(tty) for model, tty in devices]
 
     if force_device is None and force_model is None:
         for model in models.values():
@@ -161,6 +143,14 @@ class HX870(object):
     def check_flash_id(self, flash_id: list = None):
         return self.comm.check_flash_id(flash_id or self.config_model.FLASH_ID)
 
+    @classmethod
+    def simulators(cls) -> Iterable[Tuple[Type["HX870"], str]]:
+        sim_cls = getattr(sys.modules[__name__], cls.__name__ + "Sim")
+        for mode in "CP", "NMEA":
+            sim = HXSimulator(cls.config_model, mode)
+            sim.start()
+            yield sim_cls, sim.tty
+
     def __str__(self):
         return f"{self.brand} {self.handle} on `{self.tty} [{'CP Mode' if self.comm.cp_mode else 'NMEA Mode'}]`"
 
@@ -231,6 +221,12 @@ class GX1400(HX870):
             logger.info(f"Device on {self.tty} is {self.handle}, firmware version {fw}")
         else:
             logger.error(f"Device on {self.tty} does not behave or look like GX1400")
+
+    @classmethod
+    def simulators(cls) -> Iterable[Tuple[Type["GX1400"], str]]:
+        sim = HXSimulator(GX1400.config_model, "CP")
+        sim.start()
+        yield cls, sim.tty
 
 
 class HX870Sim(HX870):
