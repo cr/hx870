@@ -12,7 +12,7 @@ logger = getLogger(__name__)
 
 class GenericHXConfig(object):
 
-    CONFIG_MAGIC = [0xff, 0xff]
+    CONFIG_MAGIC = 0xffff
     FLASH_ID = ["AM000A"]
 
     CHUNK_SIZE = 0x40
@@ -170,13 +170,13 @@ class GenericHXConfig(object):
 
 
 class HX870Config(GenericHXConfig):
-    CONFIG_MAGIC = [0x03, 0x67]
+    CONFIG_MAGIC = 871
     CONFIG_SIZE = 0x8000
     FLASH_ID = ["AM057N", "AM057N2"]
 
 
 class HX890Config(GenericHXConfig):
-    CONFIG_MAGIC = [0x03, 0x7a]
+    CONFIG_MAGIC = 890
     CONFIG_SIZE = 0x10000
     FLASH_ID = ["AM063N"]
     WAYPOINT_OFFSET = 0xd700
@@ -184,7 +184,7 @@ class HX890Config(GenericHXConfig):
 
 
 class HX891Config(GenericHXConfig):
-    CONFIG_MAGIC = [0x03, 0x7b]
+    CONFIG_MAGIC = 891
     CONFIG_SIZE = 0x10000
     FLASH_ID = ["AM070N"]
     WAYPOINT_OFFSET = 0xd700
@@ -193,7 +193,7 @@ class HX891Config(GenericHXConfig):
 
 class GX1400Config(GenericHXConfig):
 
-    CONFIG_MAGIC = [0x05, 0x78]
+    CONFIG_MAGIC = 1400
     FLASH_ID = ["AM065N"]
 
     CHUNK_SIZE = 0x20
