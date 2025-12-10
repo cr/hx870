@@ -27,11 +27,14 @@ uint16 MagicPrefix <bgcolor=0xff00cc00>;  // always 0x0367 (871)
 // 0002 Radio Status -----------------------------
 FSeek(0x0002);
 struct _RadioStatus {  // start: 0002
-    ubyte _unknown0002[6] <format=hex, bgcolor=cBlack>;  // always 01 00 00 00 00 00
+    ubyte _unknown0002[2] <format=hex, bgcolor=cBlack>;  // always 01 00
+    ubyte MultiWatchMode;  // 0=off, 1=multi, 2=scan 
+    ubyte ActiveNavigationTarget;  // 0=none, 3=waypoint, 4=route
+    ubyte _unknown0006[2] <format=hex, bgcolor=cBlack>;  // values seen: 00 00, 01 00, 02 00 
     ubyte SelectedChannelGroup;
     ubyte _unknown0009 <format=hex, bgcolor=cBlack>;  // always 0e
     ubyte _unknown000a <format=hex, bgcolor=cBlack>;  // always 02
-    ubyte _unknown000b <format=hex, bgcolor=cBlack>;  // always 02
+    ubyte _unknown000b <format=hex, bgcolor=cBlack>;  // values seen: 00, 01, 02
     ubyte VolumeSetting;  // 16 steps
     ubyte SquelchSetting;  // 16 steps 
     ubyte DistressAlertStatusMaybe;  // always 00
@@ -47,10 +50,10 @@ struct _RadioStatus {  // start: 0002
 // 0020 Radio Configuration ----------------------
 FSeek(0x0020);
 
-enum <ubyte> _OffOn { OFF, ON };'
+enum <ubyte> _OffOn { OFF, ON };
 struct _GroupChannelSetup {
-    ubyte DefaultMaybe;
-    ubyte Channel;  // Used as index into channel list 
+    ubyte Status;  // 00=in use  ff=not in use
+    ubyte Channel;  // Used as index into channel list (1-based)
 };
 enum <ubyte> _MultiWatch { MW_DUAL, MW_TRIPLE };
 enum <ubyte> _ScanType { ST_MEMORY, ST_PRIORITY };
@@ -178,7 +181,7 @@ FSeek(0x0070);
 
 struct _ChannelGroupDefinition {
     _OffOn GroupEnabled;
-    _OffOn _unknownEnabled <bgcolor=cBlack>;
+    _OffOn DSCEnabled;
     _OffOn ATISEnabled;  // 01 in group 4 enables YCE15 ATIS Setup 
     char GroupName[4];  // padded with ff
     ubyte _padding <format=hex>;  // always ff

@@ -3,13 +3,14 @@
 from setuptools import setup, find_packages
 
 PACKAGE_NAME = 'hxtool'
-PACKAGE_VERSION = '0.3.1a2'
+PACKAGE_VERSION = '0.3.1a3'
 
 INSTALL_REQUIRES = [
     'coloredlogs',
     'gpxpy',
     'ipython',
-    'pyserial'
+    'pyserial',
+    'setuptools'
 ]
 
 TESTS_REQUIRE = [

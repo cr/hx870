@@ -306,7 +306,7 @@ class GenericHXProtocol(object):
             logger.debug("Device reported expected flash ID %s", fid)
             return True
         else:
-            logger.warning(f"Flash ID mismatch. Device reported {fid}, expected {flash_id}")
+            logger.debug(f"Flash ID mismatch. Device reported {fid}, expected {flash_id}")
             return False
 
     def wait_for_ready(self, timeout=1):
@@ -512,3 +512,72 @@ class MediaTekProtocol(object):
         r = self.receive()
         if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "184", "3"]:
             raise ProtocolError(f"Unexpected EraseLog acknowledgement from device: {str(r).strip()}")
+
+
+class GX1400Protocol(GenericHXProtocol):
+
+    baudrate = 38400
+
+    def __init__(self, tty=None):
+        self.conn = None
+        self.connected = False
+        self.hx_hardware = False
+        self.cp_mode = False
+        self.nmea_mode = False
+        self.__connect(tty)
+
+    def __connect(self, tty):
+        self.conn = hxtty.GenericHXTTY(tty, baudrate=self.baudrate)
+        self.connected = True
+        logger.debug("Attempting GX1400 sync")
+        try:
+            self.sync()
+        except TimeoutError:
+            logger.warning("No response, so probably not talking to GX1400")
+            self.hx_hardware = False
+            self.cp_mode = False
+            return
+
+        logger.debug("Sync successful, assuming GX1400 hardware and CP mode")
+        self.hx_hardware = True
+        self.cp_mode = True
+
+        # On the GX1400, there doesn't appear to be a distinction between
+        # CP mode and command mode. The device is immediately ready for use.
+        # However, since it's a generic serial link, there is no way to know
+        # in advance whether or not the connected device is in fact a GX1400.
+
+        # NMEA mode is currently not detected. The device can be configured to
+        # send NMEA data at 38400 baud, so adding this feature here may not be
+        # too difficult. But given that NMEA data comes in from the GX1400 over
+        # a regular serial link rather than USB, dedicated NMEA software is
+        # probably more suited than hxtool for reading it anyway.
+
+    def get_firmware_version(self):
+        self.sync()
+        data = hexlify(self.read_config_memory(0x1d, 3)).decode()
+        return (data[1] if data.startswith("0") else data[0:2]) + "." + data[2:4]
+
+    def get_flash_id(self):
+        self.sync()
+        return self.read_config_memory(0x98, 7).rstrip(b"\x00\xff").decode("ascii")
+
+
+class ReadMagicProtocol(GenericHXProtocol):
+
+    def __init__(self, tty=None, baudrate=38400):
+        self.hx_hardware = False
+        try:
+            logger.debug(f"Trying `{tty}` sync at {baudrate} baud")
+            self.conn = hxtty.GenericHXTTY(tty, baudrate=baudrate)
+            self.sync()
+            self.hx_hardware = True
+        except TimeoutError:
+            logger.debug("No response, so probably wrong baudrate or not a supported device")
+            return
+        except ProtocolError:
+            logger.debug("Unexpected response, so probably not a supported device")
+            return
+        except OSError as e:
+            logger.debug(f"OS error: {e} (ignoring, so we can look at other devices)")
+            return

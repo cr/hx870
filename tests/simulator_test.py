@@ -7,6 +7,7 @@ from sys import platform
 from threading import enumerate
 from time import sleep
 
+from hxtool import config
 from hxtool import simulator
 from hxtool.protocol import GenericHXProtocol
 
@@ -17,7 +18,7 @@ if platform.startswith("win"):
 
 @pytest.fixture(name="cp_sim")
 def fixture_cp_simulator():
-    s = simulator.HXSimulator(mode="CP", loop_delay=0.0005)
+    s = simulator.HXSimulator(config.HX870Config, mode="CP", loop_delay=0.0005)
     s.start()
     yield s
     s.stop()
@@ -26,7 +27,7 @@ def fixture_cp_simulator():
 
 @pytest.fixture(name="nmea_sim")
 def fixture_nmea_simulator():
-    s = simulator.HXSimulator(mode="NMEA", nmea_delay=0.2, loop_delay=0.01)
+    s = simulator.HXSimulator(config.HX870Config, mode="NMEA", nmea_delay=0.2, loop_delay=0.01)
     s.start()
     yield s
     s.stop()
@@ -44,10 +45,10 @@ def kill_simulator_threads_fixture():
 def test_simulator_instance(kill_sims):
     del kill_sims
 
-    sim_a = simulator.HXSimulator(mode="CP", loop_delay=0.001)
-    sim_b = simulator.HXSimulator(mode="CP", loop_delay=0.001)
-    sim_c = simulator.HXSimulator(mode="CP", loop_delay=0.001)
-    sim_n = simulator.HXSimulator(mode="NMEA", nmea_delay=0.03, loop_delay=0.01)
+    sim_a = simulator.HXSimulator(config.HX870Config, mode="CP", loop_delay=0.001)
+    sim_b = simulator.HXSimulator(config.HX890Config, mode="CP", loop_delay=0.001)
+    sim_c = simulator.HXSimulator(config.HX891Config, mode="CP", loop_delay=0.001)
+    sim_n = simulator.HXSimulator(config.HX891Config, mode="NMEA", nmea_delay=0.03, loop_delay=0.01)
 
     for sim in sim_a, sim_b, sim_c, sim_n:
         assert sim in simulator.HXSimulator.instances

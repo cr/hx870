@@ -3,7 +3,7 @@
 import pytest
 
 from hxtool.main import main
-from hxtool.device import HXSim
+from hxtool.device import HX870Sim
 from hxtool.simulator import HXSimulator
 
 
@@ -33,12 +33,12 @@ def test_hxtool_devices(capsys, kill_sims):
     nmea_sim = out[1].split("\t")
 
     assert "CP mode" in cp_sim
-    assert HXSim.brand in cp_sim
-    assert HXSim.model in cp_sim
+    assert HX870Sim.brand in cp_sim
+    assert HX870Sim.model in cp_sim
 
     assert "NMEA mode" in nmea_sim
-    assert HXSim.brand in nmea_sim
-    assert HXSim.model in nmea_sim
+    assert HX870Sim.brand in nmea_sim
+    assert HX870Sim.model in nmea_sim
 
 
 def test_hxtool_info(capsys, kill_sims):
@@ -53,9 +53,9 @@ def test_hxtool_info(capsys, kill_sims):
 
     outerr = capsys.readouterr()
     assert "CP mode" in outerr.err
-    assert HXSim.handle in outerr.out
-    assert HXSim.brand in outerr.out
-    assert HXSim.model in outerr.out
+    assert HX870Sim.handle in outerr.out
+    assert HX870Sim.brand in outerr.out
+    assert HX870Sim.model in outerr.out
     assert "23.42" in outerr.out
     assert "MMSI" in outerr.out
     assert "ATIS" in outerr.out
@@ -70,9 +70,9 @@ def test_hxtool_info(capsys, kill_sims):
 
     outerr = capsys.readouterr()
     assert "NMEA mode" in outerr.err
-    assert HXSim.handle in outerr.out
-    assert HXSim.brand in outerr.out
-    assert HXSim.model in outerr.out
+    assert HX870Sim.handle in outerr.out
+    assert HX870Sim.brand in outerr.out
+    assert HX870Sim.model in outerr.out
 
 
 def test_hxtool_id(capsys, kill_sims):

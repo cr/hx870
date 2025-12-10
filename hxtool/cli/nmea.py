@@ -40,6 +40,6 @@ def nmea_dump(h):
 
 
 def print_nmea(h):
-    for l in nmea_dump(h):
-        sys.stdout.write(l)
+    for line in nmea_dump(h):
+        sys.stdout.write(line)
         sys.stdout.flush()

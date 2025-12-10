@@ -2,7 +2,20 @@
 
 Here's my collection of experimental Python code and reverse engineering notes
 for hacking the Standard Horizon HX-style maritime radios by Yaesu. Currently supported
-are the *HX870* and *HX890* model series. The code also works on FT750-style aviation
+are the **HX870**, **HX890**, and **GX1400** model series.
+
+Radios in "CP mode" are usually automatically detected when connected.
+You can also manually select devices with the `--tty` or `--model` CLI options.
+
+The GX1400 has no USB port and is connected to a RS-232 style serial port.
+The GX1400 connector wiring is as follows. See the [SHsync](https://mbof.github.io/hx/) docs for a
+[diagram of the DE-9 connector pin-out](https://github.com/mbof/hxsync/blob/main/gx.md#wiring-diagram).
+
+* `RxD`: accessory cable white
+* `TxD`: accessory cable yellow
+* `GND`: accessory cable green + speaker cable shield
+
+The code also works on FT750-style aviation
 radios, which share the same hardware platform, to some degree as well, but that
 functionality is not exposed on the command line frontend, yet.
 

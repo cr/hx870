@@ -7,7 +7,7 @@ from logging import getLogger
 from sys import exit, argv, stdout
 
 import coloredlogs
-from pkg_resources import require
+from importlib.metadata import version
 
 import hxtool.cli
 from hxtool.simulator import HXSimulator
@@ -23,7 +23,7 @@ def get_args(args=None):
     :return: Argument parser object
     """
 
-    pkg_version = require("hxtool")[0].version
+    pkg_version = version("hxtool")
 
     parser = ArgumentParser(prog="hxtool")
     parser.add_argument("--version", action="version", version="%(prog)s " + pkg_version)
@@ -40,7 +40,7 @@ def get_args(args=None):
     parser.add_argument("-m", "--model",
                         help="force device model",
                         type=str.upper,
-                        choices=["HX870", "HX890"],
+                        choices=hxtool.device.models.keys(),
                         action="store")
 
     parser.add_argument("--simulator",
