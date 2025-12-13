@@ -87,9 +87,9 @@ def test_simulator_instance(kill_sims):
     assert sim_c.is_alive()
     assert sim_n.is_alive()
 
-    ser_a.write(b"#CMDSY\r\n")
-    assert ser_a.out_waiting == 8
-    assert ser_a.readline() == b""
+    # Writing to stopped simulator should raise
+    with pytest.raises(OSError):
+        ser_a.write(b"#CMDSY\r\n")
 
     # Dump NMEA sentences from sim_n which should have sent several by now
     assert ser_n.in_waiting > 0

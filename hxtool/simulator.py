@@ -2,7 +2,7 @@
 
 from binascii import hexlify, unhexlify
 from logging import getLogger
-from os import ttyname, read, write, close, set_blocking
+from os import ttyname, read, write, close, set_blocking, close
 # FIXME: Importing pty fails on Windows
 from pty import openpty
 from threading import Event, Thread
@@ -74,6 +74,14 @@ class HXSimulator(Thread):
 
     def stop(self):
         self.stop_running.set()
+        try:
+            close(self.master)
+        except OSError:
+            pass
+        try:
+            close(self.slave)
+        except OSError:
+            pass
 
     def __run_nmea_mode(self):
         logger.debug("Starting simulator thread in NMEA mode")
@@ -83,6 +91,8 @@ class HXSimulator(Thread):
             try:
                 b = read(self.master, 1)
             except BlockingIOError:
+                b = b""
+            except OSError:  # Simulator likely closed, tty died
                 b = b""
             if len(b) > 0:
                 # We have input and all NMEA messages start with $
@@ -123,6 +133,8 @@ class HXSimulator(Thread):
             try:
                 b = read(self.master, 1)
             except BlockingIOError:
+                b = b""
+            except OSError:  # Simulator likely closed, tty died
                 b = b""
             if len(b) > 0:
                 logger.debug(f"CP mode got {b}")
