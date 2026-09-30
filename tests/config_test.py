@@ -99,6 +99,10 @@ def test_hx870_mmsi(sim_870_config):
     with pytest.raises(protocol.ProtocolError):
         sim_870_config.write_mmsi(mmsi="11111f111")  # not numeric
     with pytest.raises(protocol.ProtocolError):
+        sim_870_config.write_mmsi(mmsi="")  # empty
+    with pytest.raises(protocol.ProtocolError):
+        sim_870_config.write_mmsi(mmsi="\u0669" * 9)  # digits, but not ASCII
+    with pytest.raises(protocol.ProtocolError):
         sim_870_config.write_mmsi(mmsi="123456789", status="gh")  # invalid save counter
 
 
@@ -121,12 +125,18 @@ def test_hx870_atis(sim_870_config):
     atis, status = sim_870_config.read_atis()
     assert status not in ["00", "FF"], "save counter is set automatically"
 
+    # Ten digits are taken as they are, even without the leading 9
+    sim_870_config.write_atis(atis="2987654321")
+    assert sim_870_config.read_atis()[0] == "2987654321", "ATIS content is trusted"
+
     with pytest.raises(protocol.ProtocolError):
         sim_870_config.write_atis(atis="987654321")  # too short
     with pytest.raises(protocol.ProtocolError):
         sim_870_config.write_atis(atis="91111f1111")  # not numeric
     with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_atis(atis="2987654321")  # doesn't start with 9
+        sim_870_config.write_atis(atis="")  # empty
+    with pytest.raises(protocol.ProtocolError):
+        sim_870_config.write_atis(atis="\u0669" * 10)  # digits, but not ASCII
     with pytest.raises(protocol.ProtocolError):
         sim_870_config.write_atis(atis="9876543210", status="gh")  # invalid save counter
 

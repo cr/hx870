@@ -104,7 +104,7 @@ class GenericHXConfig(object):
             if status is None:
                 status = "00"
         else:
-            if not mmsi.isdecimal():
+            if not (mmsi.isascii() and mmsi.isdecimal()):
                 raise ProtocolError("Invalid MMSI format")
             if status is None:
                 status = "02"
@@ -129,7 +129,7 @@ class GenericHXConfig(object):
             if status is None:
                 status = "00"
         else:
-            if not atis[0] == "9" or not atis.isdecimal():
+            if not (atis.isascii() and atis.isdecimal()):
                 raise ProtocolError("Invalid ATIS format")
             if status is None:
                 status = "01"
