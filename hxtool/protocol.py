@@ -212,6 +212,8 @@ class GenericHXProtocol(object):
         # in spurious system and text messages. These are also ignored per default.
         while True:
             m = Message(parse=self.read_line())
+            if not m.validate():
+                raise ProtocolError(f"Checksum mismatch in message from device: {str(m).strip()}")
             if ignore_full_stop and m.type == "$PMTK" and m.args == ["LOG", "FULL_STOP"]:
                 logger.debug(f"Ignoring GPS module FULL_STOP warning {str(m).strip()}")
                 continue

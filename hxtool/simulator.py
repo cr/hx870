@@ -61,6 +61,9 @@ class HXSimulator(Thread):
         # FIXME: This will fail on Windows (probably on import)
         set_blocking(self.master, False)
         self.ignore_cmdok = False
+        # Fault injection for tests. Maps a reply type to the fault applied
+        # to every reply of that type, e.g. {"#CEPDT": "checksum"}.
+        self.faults = {}
 
     def run(self):
         if self.stop_running.is_set():
@@ -167,32 +170,40 @@ class HXSimulator(Thread):
 
         logger.debug("CP simulator thread finished")
 
+    def __reply(self, message_type, args=None):
+        msg = Message(message_type, args)
+        fault = self.faults.get(message_type)
+        if fault == "checksum":
+            # Received checksum has precedence when the message is serialized
+            msg.checksum_recv = "%02X" % (int(msg.checksum, 16) ^ 0xff)
+        write(self.master, bytes(msg))
+
     def __process_cp_message(self, msg):
         logger.debug(f"CP simulator processing message {msg}")
         msg = Message(parse=msg)
         if not msg.validate():
-            write(self.master, bytes(Message("#CMDER")))
+            self.__reply("#CMDER")
             return
         if msg.type == "#CMDOK":
             if self.ignore_cmdok:
                 self.ignore_cmdok = False
             else:
-                write(self.master, bytes(Message("#CMDOK")))
+                self.__reply("#CMDOK")
         elif msg.type == "#CMDSY":
-            write(self.master, bytes(Message("#CMDOK")))
+            self.__reply("#CMDOK")
         elif msg.type == "#CVRRQ":
-            write(self.master, bytes(Message("#CMDOK")))
-            write(self.master, bytes(Message("#CVRDQ", ["23.42"])))
+            self.__reply("#CMDOK")
+            self.__reply("#CVRDQ", ["23.42"])
         elif msg.type == "#CEPSR":
-            write(self.master, bytes(Message("#CMDOK")))
-            write(self.master, bytes(Message("#CEPSD", ["00"])))
+            self.__reply("#CMDOK")
+            self.__reply("#CEPSD", ["00"])
             self.ignore_cmdok = True
         elif msg.type == "#CEPRD":
-            write(self.master, bytes(Message("#CMDOK")))
+            self.__reply("#CMDOK")
             offset = int(msg.args[0], 16)
             size = int(msg.args[1], 16)
             data = hexlify(self.c[offset:offset + size]).decode("ascii").upper()
-            write(self.master, bytes(Message("#CEPDT", [msg.args[0], msg.args[1], data])))
+            self.__reply("#CEPDT", [msg.args[0], msg.args[1], data])
             # Ignore next CMDOK
             self.ignore_cmdok = True
         elif msg.type == "#CEPWR":
@@ -201,10 +212,10 @@ class HXSimulator(Thread):
             data = unhexlify(msg.args[2])
             if len(data) == size:
                 self.c[offset:offset + size] = data
-                write(self.master, bytes(Message("#CMDOK")))
+                self.__reply("#CMDOK")
                 if len(self.c) != self.type.CONFIG_SIZE:
                     logger.critical("CP simulator internal memory corruption after write")
             else:
-                write(self.master, bytes(Message("#CMDER")))
+                self.__reply("#CMDER")
         else:
-            write(self.master, bytes(Message("#CMDER")))
+            self.__reply("#CMDER")

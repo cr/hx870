@@ -9,7 +9,7 @@ from time import sleep
 
 from hxtool import config
 from hxtool import simulator
-from hxtool.protocol import GenericHXProtocol
+from hxtool.protocol import GenericHXProtocol, ProtocolError
 
 # The simulator doesn't work on Windows, so skip test if running on Windows
 if platform.startswith("win"):
@@ -168,3 +168,32 @@ def test_cp_config_rw(cp_sim, kill_sims):
     p.write_config_memory(0x1000, random_bytes)
     m = p.read_config_memory(0x1000, len(random_bytes))
     assert m == random_bytes
+
+
+def test_cp_checksum_verification(cp_sim, kill_sims):
+    del kill_sims
+
+    p = GenericHXProtocol(cp_sim.tty)
+    assert p.read_config_memory(0x0100, 6) == b"AM057N", "Read works without fault"
+
+    # Each checksummed reply type must be rejected when its checksum is broken
+    cp_sim.faults["#CEPDT"] = "checksum"
+    with pytest.raises(ProtocolError, match="[Cc]hecksum"):
+        p.read_config_memory(0x0100, 6)
+    del cp_sim.faults["#CEPDT"]
+    p.sync()
+    assert p.read_config_memory(0x0100, 6) == b"AM057N", "Read recovers after fault"
+
+    cp_sim.faults["#CEPSD"] = "checksum"
+    with pytest.raises(ProtocolError, match="[Cc]hecksum"):
+        p.wait_for_ready()
+    del cp_sim.faults["#CEPSD"]
+    p.sync()
+    p.wait_for_ready()
+
+    cp_sim.faults["#CVRDQ"] = "checksum"
+    with pytest.raises(ProtocolError, match="[Cc]hecksum"):
+        p.get_firmware_version()
+    del cp_sim.faults["#CVRDQ"]
+    p.sync()
+    assert p.get_firmware_version() == "23.42", "Firmware version recovers after fault"
