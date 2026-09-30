@@ -130,14 +130,26 @@ class Message(object):
                 yield cls(parse=message)
 
 
+def _is_text(data: bytes) -> bool:
+    """Printable ASCII lines, as a partial NMEA sentence looks like"""
+    return len(data) > 0 and all(0x20 <= b < 0x7f or b in b"\r\n" for b in data)
+
+
 class GenericHXProtocol(object):
 
-    def __init__(self, tty=None):
+    def __init__(self, tty=None, identified=False):
+        """
+        identified: the port is known to belong to an HX radio (USB metadata, or the
+        user forced the model), so silence means NMEA mode with a quiet GPS rather
+        than unknown hardware
+        """
         self.conn = None
         self.connected = False
+        self.identified = identified
         self.hx_hardware = False
         self.cp_mode = False
         self.nmea_mode = False
+        self.nmea_output_seen = False
         self.__connect(tty)
 
     def __connect(self, tty):
@@ -158,44 +170,45 @@ class GenericHXProtocol(object):
 
     def __detect_device_mode(self):
 
-        # In NMEA mode, an HX device replies with "P" to "P", and with nothing to "?"
-        # In CP mode, an HX device replies with "@" to "?", and with nothing to "P"
-        # Hence an HX device will reply to "?P" with
-        #   - "P" if it is in NMEA mode, and
-        #   - "?" if it is in CP mode
+        # In CP mode, an HX device replies with "@" to "?" and ignores "P".
+        # In NMEA mode, some firmware replies with "P" to "P" (seen on HX891BT),
+        # some ignores it (seen on HX870). Either way the GPS module sends NMEA
+        # sentences, unless GPS output is disabled or the module is asleep
+        # (power save). Whatever arrives may start in the middle of a sentence,
+        # so everything received within the timeout is classified as a whole.
 
-        self.conn.flush_input()
+        self.conn.flush_input(expected=True)  # old NMEA output, if any
         self.conn.flush_output()
 
         self.conn.write(b"P?")
-        try:
-            r = self.conn.read(1)
-        except TimeoutError:
-            logger.warning("No response, so probably not talking to HX hardware")
-            self.hx_hardware = False
-            self.nmea_mode = False
-            self.cp_mode = False
-            return
+        received = b""
+        deadline = time() + self.conn.default_timeout
+        while time() < deadline:
+            try:
+                received += self.conn.read(1)
+            except TimeoutError:
+                break
+            if b"@" in received or b"$" in received:
+                break
 
-        if r == b"P" or r == b"$":
-            # There's sometimes a race condition where the firmware sends
-            # a NMEA message before it replies with "P", so flush.
-            if r == b"$":
-                logger.debug("Probable race condition with NMEA message detected, assuming NMEA mode")
-                self.conn.flush_input()
-            logger.debug("Response like HX hardware in NMEA mode")
-            self.hx_hardware = True
-            self.nmea_mode = True
-            self.cp_mode = False
-
-            return
-
-        if r == b"@":
+        if b"@" in received:
             logger.debug("Response like HX hardware in CP mode")
-            self.hx_hardware = True
-            self.nmea_mode = False
-            self.cp_mode = True
-            return
+            self.hx_hardware, self.cp_mode, self.nmea_mode = True, True, False
+        elif received == b"P":
+            logger.debug("Response like HX hardware in NMEA mode, no GPS output yet")
+            self.hx_hardware, self.cp_mode, self.nmea_mode = True, False, True
+        elif b"$" in received or _is_text(received):
+            logger.debug("NMEA output like HX hardware in NMEA mode")
+            self.hx_hardware, self.cp_mode, self.nmea_mode = True, False, True
+            self.nmea_output_seen = True
+            self.conn.flush_input(expected=True)
+        elif not received and self.identified:
+            logger.info("No response to handshake, assuming NMEA mode with GPS output off or asleep")
+            self.hx_hardware, self.cp_mode, self.nmea_mode = True, False, True
+        elif not received:
+            logger.warning("No response, so probably not talking to HX hardware")
+        else:
+            logger.warning(f"Unexpected response {received!r}, so probably not talking to HX hardware")
 
     def available(self):
         return self.conn.available()
@@ -547,12 +560,14 @@ class GX1400Protocol(GenericHXProtocol):
 
     baudrate = 38400
 
-    def __init__(self, tty=None):
+    def __init__(self, tty=None, identified=False):
         self.conn = None
         self.connected = False
+        self.identified = identified
         self.hx_hardware = False
         self.cp_mode = False
         self.nmea_mode = False
+        self.nmea_output_seen = False
         self.__connect(tty)
 
     def __connect(self, tty):

@@ -6,7 +6,7 @@ import re
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 import sys
-from typing import Iterable, List, Optional, Set, Tuple, Type
+from typing import Iterable, List, NamedTuple, Optional, Set, Type
 
 from .config import HX870Config, HX890Config, HX891Config, GX1400Config
 from .nmea import HX870NMEAProtocol, HX890NMEAProtocol
@@ -26,6 +26,13 @@ exclude_ports = [
     "/dev/cu.URT1",
     "/dev/cu.URT2",
 ]
+
+
+class Candidate(NamedTuple):
+    """A port and the model class to talk to it with"""
+    model: Type["HX870"]
+    tty: str
+    identified: bool  # known to be that model (USB metadata or forced), not merely probed
 
 
 def enumerate(force_device=None, force_model=None, add_simulator=False):
@@ -58,11 +65,10 @@ def enumerate(force_device=None, force_model=None, add_simulator=False):
             logger.error(f"Invalid numeric device selector {force_device}")
             return []
 
-    return [model(tty) for model, tty in devices]
+    return [c.model(c.tty, identified=c.identified) for c in devices]
 
 
-def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] = None) \
-        -> Iterable[Tuple[Type["HX870"], str]]:
+def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] = None) -> List[Candidate]:
 
     # The numeric device selector is only applicable as index into this function's
     # result. Therefore, we need to ignore it and generate the full list here.
@@ -85,7 +91,7 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
 
         # With both force_model and force_device used, skip auto-detection entirely
         if len(models) == 1 and len(ports) == 1:
-            return [(models[0], ports[0].device)]
+            return [Candidate(models[0], ports[0].device, identified=True)]
 
     # Auto-detect based on USB metadata (very fast)
 
@@ -95,7 +101,7 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
             if model.usb_vendor_id is None and model.usb_product_id is None:
                 continue
             if port.vid == model.usb_vendor_id and port.pid == model.usb_product_id:
-                devices.append((model, port.device))
+                devices.append(Candidate(model, port.device, identified=True))
                 logger.debug(f"Detected `{model.__name__}` at `{port.device}` by USB metadata")
 
                 if port.description != model.usb_product_name \
@@ -124,7 +130,7 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
         magic = read_magic(port.device, baudrates)
         for model in models:
             if model.config_model.CONFIG_MAGIC == magic:
-                devices.append((model, port.device))
+                devices.append(Candidate(model, port.device, identified=False))
                 logger.debug(f"Detected `{model.__name__}` at `{port.device}` by config magic")
                 break  # Stop at first device to minimise probing delays
 
@@ -163,9 +169,9 @@ class HX870(object):
     nmea_model = HX870NMEAProtocol
     gps_model = MediaTekProtocol
 
-    def __init__(self, tty):
+    def __init__(self, tty, identified=False):
         self.tty = tty
-        self.comm = self.protocol_model(tty=tty)
+        self.comm = self.protocol_model(tty=tty, identified=identified)
         self.config = None
         self.nmea = None
         self.gps = None
@@ -208,12 +214,12 @@ class HX870(object):
         return self.comm.check_flash_id(flash_id or self.config_model.FLASH_ID)
 
     @classmethod
-    def simulators(cls) -> Iterable[Tuple[Type["HX870"], str]]:
+    def simulators(cls) -> Iterable[Candidate]:
         sim_cls = getattr(sys.modules[__name__], cls.__name__ + "Sim")
         for mode in "CP", "NMEA":
             sim = HXSimulator(cls.config_model, mode)
             sim.start()
-            yield sim_cls, sim.tty
+            yield Candidate(sim_cls, sim.tty, identified=True)
 
     def __str__(self):
         return f"{self.brand} {self.handle} on `{self.tty} [{'CP Mode' if self.comm.cp_mode else 'NMEA Mode'}]`"
@@ -287,10 +293,10 @@ class GX1400(HX870):
             logger.error(f"Device on {self.tty} does not behave or look like GX1400")
 
     @classmethod
-    def simulators(cls) -> Iterable[Tuple[Type["GX1400"], str]]:
+    def simulators(cls) -> Iterable[Candidate]:
         sim = HXSimulator(GX1400.config_model, "CP")
         sim.start()
-        yield cls, sim.tty
+        yield Candidate(cls, sim.tty, identified=True)
 
 
 class HX870Sim(HX870):

@@ -21,7 +21,7 @@ class DevicesCommand(CliCommand):
             for device in devices:
                 mode = "unknown mode (BE CAREFUL)"
                 if device.comm.nmea_mode:
-                    mode = "NMEA mode"
+                    mode = "NMEA mode" if device.comm.nmea_output_seen else "NMEA mode (no output seen)"
                 if device.comm.cp_mode:
                     mode = "CP mode"
                 if not device.comm.hx_hardware:

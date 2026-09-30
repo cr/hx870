@@ -82,8 +82,9 @@ def test_hxtool_devices_selectors(capsys, kill_sims):
     # The device selector is ignored, as the list is what defines the indices
     assert main(["--simulator", "--tty", "3", "devices"]) == 0
     out = capsys.readouterr().out.strip("\n").split("\n")
-    assert len(out) == 7, "All simulators are listed"
-    assert [line.split("\t")[0] for line in out] == [f"[{i}]" for i in range(7)]
+    simulated = [line for line in out if "Simulator" in line or "GX1400" in line]
+    assert len(simulated) == 7, "All simulators are listed (real radios may be attached as well)"
+    assert [line.split("\t")[0] for line in simulated] == [f"[{i}]" for i in range(7)]
 
 
 def test_hxtool_info(capsys, kill_sims):

@@ -20,7 +20,11 @@ def comport(tty, meta):
 
 def enumerate_devices(*args):
     devices = hxtool.device.enumerate_devices(*args)
-    return [(m.__name__, t) for m, t in devices]  # The class name is easier to test for
+    return [(c.model.__name__, c.tty) for c in devices]  # The class name is easier to test for
+
+
+def identified_devices(*args):
+    return [(c.model.__name__, c.tty, c.identified) for c in hxtool.device.enumerate_devices(*args)]
 
 
 @pytest.fixture(name="kill_sims")
@@ -119,6 +123,10 @@ def test_enumerate_devices(monkeypatch, caplog):
         ("HX870", "/dev/hx0"),
     ], "force a wrong model class"  # both force_model and force_device
 
+    # A port is identified when USB metadata or the user's forced model says what it is
+    assert identified_devices(models.values(), "/dev/hx0") == [("HX890", "/dev/hx0", True)], "by USB metadata"
+    assert identified_devices([HX870], "/dev/hx0") == [("HX870", "/dev/hx0", True)], "by forced model"
+
     assert not enumerate_devices(models.values(), "blah"), "invalid force_device"
     assert "Invalid device selector blah" in caplog.text
 
@@ -135,6 +143,7 @@ def test_enumerate_devices(monkeypatch, caplog):
         ("GX1400", "/dev/pty7"),
     ], "unlisted force_device with force_model"
     assert probed == [], "both forced skips probing"
+    assert identified_devices(models.values(), "/dev/pty7") == [("HX890", "/dev/pty7", False)], "by magic only"
 
     # Detection by config magic
 
@@ -165,7 +174,8 @@ def test_enumerate_all(kill_sims):
     assert "HX890Sim" in devices
     assert "HX891Sim" in devices
     assert "GX1400" in devices
-    assert len(devices) == 7
+    simulated = [d for d in devices if d.endswith("Sim") or d == "GX1400"]
+    assert len(simulated) == 7, "all simulators listed (real radios may be attached as well)"
 
 
 def test_enumerate_force_model(kill_sims):
@@ -231,3 +241,23 @@ def test_hxtool_unlisted_device(capsys, kill_sims):
     outerr = capsys.readouterr()
     assert f"Serial device:\t{sim.tty}" in outerr.out
     assert "23.42" in outerr.out
+
+
+def test_hxtool_devices_silent_nmea(capsys, kill_sims, monkeypatch):
+    # A simulated radio whose GPS never says anything
+    sim_start = HXSimulator.start
+
+    def start_silent(self):
+        if self.mode == "NMEA":
+            self.nmea_delay = None
+        sim_start(self)
+
+    monkeypatch.setattr(HXSimulator, "start", start_silent)
+
+    assert main(["--simulator", "-m", "HX870", "devices"]) == 0
+    outerr = capsys.readouterr()
+    assert "does not behave like HX hardware" not in outerr.err
+    lines = [line for line in outerr.out.strip("\n").split("\n") if "Simulator" in line]
+    assert len(lines) == 2
+    assert "CP mode" in lines[0]
+    assert "NMEA mode (no output seen)" in lines[1]

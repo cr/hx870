@@ -53,9 +53,10 @@ class GenericHXTTY(object):
     def available(self):
         return self.s.in_waiting
 
-    def flush_input(self):
+    def flush_input(self, expected=False):
         if self.s.in_waiting > 0:
-            logger.warning(f"{self.tty} flushing {self.s.in_waiting} bytes from input buffer")
+            message = f"{self.tty} flushing {self.s.in_waiting} bytes from input buffer"
+            logger.debug(message) if expected else logger.warning(message)
         return self.s.flushInput()
 
     def flush_output(self):

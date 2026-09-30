@@ -38,7 +38,13 @@ class HXSimulator(Thread):
             instance.join()
 
     def __init__(self, device_type: GenericHXConfig, mode: str, config: bytearray = None,
-                 loop_delay: float = None, nmea_delay: float = 3.0):
+                 loop_delay: float = None, nmea_delay: float = 1.0, nmea_partial: bool = False,
+                 nmea_ping: bool = False):
+        """
+        nmea_delay: seconds between NMEA sentences, or None for a radio whose GPS is silent
+        nmea_partial: start the NMEA stream in the middle of a sentence
+        nmea_ping: reply with "P" to "P" in NMEA mode, as the HX891BT does (the HX870 does not)
+        """
         # The simulator is built on pseudo terminals, which don't exist on
         # all platforms (Windows). Importing them here keeps the module
         # importable everywhere.
@@ -70,6 +76,8 @@ class HXSimulator(Thread):
         self.stop_running = Event()
         self.loop_delay = loop_delay or self.loop_delay_default
         self.nmea_delay = nmea_delay
+        self.nmea_partial = nmea_partial
+        self.nmea_ping = nmea_ping
         set_blocking(self.master, False)
         self.ignore_cmdok = False
         # Fault injection for tests. Maps a reply type to the fault applied
@@ -102,7 +110,11 @@ class HXSimulator(Thread):
     def __run_nmea_mode(self):
         logger.debug("Starting simulator thread in NMEA mode")
         message = b""
-        next_message_time = time() + self.nmea_delay
+        sentence = b"$GPLL,,,,\r\n"
+        if self.nmea_partial:
+            # The host may open the port while a sentence is on the wire
+            write(self.master, sentence[3:])
+        next_message_time = time() + self.nmea_delay if self.nmea_delay is not None else None
         while not self.stop_running.wait(self.loop_delay):
             try:
                 b = read(self.master, 1)
@@ -122,8 +134,7 @@ class HXSimulator(Thread):
                         message = b""
                 elif b == b"$":
                     message = b
-                elif b == b"P":
-                    # Reply with P to P to signal NMEA mode
+                elif b == b"P" and self.nmea_ping:
                     logger.debug("NMEA simulator responding to ping")
                     write(self.master, b"P")
                 else:
@@ -133,8 +144,8 @@ class HXSimulator(Thread):
                 # No input, so check whether it's time to send
                 # a dummy NMEA message.
                 now = time()
-                if now >= next_message_time:
-                    write(self.master, b"$GPLL,,,,\r\n")
+                if next_message_time is not None and now >= next_message_time:
+                    write(self.master, sentence)
                     next_message_time = now + self.nmea_delay
 
         logger.debug("NMEA simulator thread finished")
