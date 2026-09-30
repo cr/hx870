@@ -3,6 +3,7 @@
 import pytest
 
 from hxtool.main import main
+from hxtool.protocol import Message
 from hxtool.device import HX870Sim
 from hxtool.simulator import HXSimulator
 
@@ -198,10 +199,45 @@ def test_hxtool_atis_mmsi(capsys, kill_sims):
     assert ret == 0, "hxtool atis/mmsi writing and reset returns 0"
 
     outerr = capsys.readouterr()
-    assert """CP simulator processing message b'#CEPWR\\t00B0\\t06\\tFFFFFFFFFF00\\t04\\r\\n'""" in outerr.err
-    assert """CP simulator processing message b'#CEPWR\\t00B6\\t06\\tFFFFFFFFFF00\\t02\\r\\n'""" in outerr.err
-    assert """CP simulator processing message b'#CEPWR\\t00B6\\t06\\t912345678901\\t0B\\r\\n'""" in outerr.err
-    assert """CP simulator processing message b'#CEPWR\\t00B0\\t06\\t123456789002\\t07\\r\\n'""" in outerr.err
+    assert written("00B0", "FFFFFFFFFF00") in outerr.err, "MMSI reset"
+    assert written("00B6", "FFFFFFFFFF00") in outerr.err, "ATIS reset"
+    assert written("00B6", "912345678900") in outerr.err, "ATIS written, counter left as reset"
+    assert written("00B0", "123456789000") in outerr.err, "MMSI written, counter left as reset"
+
+
+def written(offset, data) -> str:
+    """The simulator's log line for a config write, checksum included"""
+    return f"CP simulator processing message {Message('#CEPWR', [offset, '%02X' % (len(data) // 2), data])!r}"
+
+
+def test_hxtool_id_counters(capsys, kill_sims):
+    del kill_sims
+
+    # A fresh simulator has never been programmed
+    assert main(["--simulator", "-t", "0", "id"]) == 0
+    out = capsys.readouterr().out
+    assert "MMSI: FFFFFFFFF [counter 255]" in out
+    assert "ATIS: FFFFFFFFFF [counter 255]" in out
+
+    # Writing a code leaves the update counter alone
+    assert main(["--debug", "--simulator", "-t", "0", "id", "--mmsi", "123456789"]) == 0
+    assert written("00B0", "1234567890FF") in capsys.readouterr().err
+
+    # The counter can be written by itself, leaving the code alone ...
+    assert main(["--debug", "--simulator", "-t", "0", "id", "--mmsi-counter", "3"]) == 0
+    assert written("00B0", "FFFFFFFFFF03") in capsys.readouterr().err
+
+    # ... or along with the code
+    assert main(["--debug", "--simulator", "-t", "0", "id", "--atis", "9123456789", "--atis-counter", "4"]) == 0
+    assert written("00B6", "912345678904") in capsys.readouterr().err
+
+    # A reset restores the factory state, unless a counter is given explicitly
+    assert main(["--debug", "--simulator", "-t", "0", "id", "--reset", "--mmsi-counter", "9"]) == 0
+    err = capsys.readouterr().err
+    assert written("00B0", "FFFFFFFFFF09") in err
+    assert written("00B6", "FFFFFFFFFF00") in err
+
+    assert main(["--simulator", "-t", "0", "id", "--mmsi-counter", "300"]) != 0, "counter is one byte"
 
 
 @pytest.mark.slow

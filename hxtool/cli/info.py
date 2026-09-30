@@ -38,16 +38,16 @@ class InfoCommand(CliCommand):
         region, region_code = hx.config.read_region()
         print(f"Region:\t{region} [{region_code:02x}]")
 
-        mmsi, mmsi_status = hx.config.read_mmsi()
+        mmsi, mmsi_counter = hx.config.read_mmsi()
         print(f"MMSI:\t{mmsi}")
-        print(f"MMSI status:\t{mmsi_status}")
+        print(f"MMSI update counter:\t{mmsi_counter}")
 
         atis_enabled, atis_enabled_code = hx.config.read_atis_enabled()
         atis_enabled = "ENABLED" if atis_enabled else "DISABLED"
         print(f"ATIS function:\t{atis_enabled} [{atis_enabled_code:02x}]")
 
-        atis, atis_status = hx.config.read_atis()
+        atis, atis_counter = hx.config.read_atis()
         print(f"ATIS:\t{atis}")
-        print(f"ATIS status:\t{atis_status}")
+        print(f"ATIS update counter:\t{atis_counter}")
 
         return 0

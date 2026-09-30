@@ -10,6 +10,12 @@ from .protocol import GenericHXProtocol, ProtocolError
 logger = getLogger(__name__)
 
 
+def _counter_byte(counter, what: str) -> bytes:
+    if type(counter) is not int or not 0 <= counter <= 0xff:
+        raise ProtocolError(f"Invalid {what} update counter")
+    return bytes([counter])
+
+
 class GenericHXConfig(object):
 
     CONFIG_MAGIC = 0xffff
@@ -93,52 +99,53 @@ class GenericHXConfig(object):
         return wp_list
 
     def read_mmsi(self):
-        data = hexlify(self.p.read_config_memory(self.MMSI_OFFSET, 6)).decode().upper()
-        mmsi = data[0:9]
-        status = data[10:12]
-        return mmsi, status
+        data = self.p.read_config_memory(self.MMSI_OFFSET, 6)
+        mmsi = hexlify(data[0:5]).decode().upper()[0:9]
+        return mmsi, data[5]
 
-    def write_mmsi(self, mmsi: str = None, status: str = None):
+    def write_mmsi(self, mmsi: str = None, counter: int = None):
+        """
+        Program the MMSI, or reset it to the factory state when None.
+        The update counter next to it is left as it is, unless given.
+        """
         if mmsi is None:
-            mmsi = "FFFFFFFFFF"
-            if status is None:
-                status = "00"
+            code = "FFFFFFFFFF"
+            if counter is None:
+                counter = 0
         else:
             if not (mmsi.isascii() and mmsi.isdecimal()):
                 raise ProtocolError("Invalid MMSI format")
             if len(mmsi) != 9:
                 raise ProtocolError("Invalid MMSI length")
             # DSC addresses are coded with ten digits, the last one always being zero
-            mmsi += "0"
-            if status is None:
-                status = "02"
-        if status.upper() not in ["00", "01", "02", "FF"]:
-            raise ProtocolError("Invalid MMSI status")
-        data = unhexlify(mmsi + status)
-        self.p.write_config_memory(self.MMSI_OFFSET, data)
+            code = mmsi + "0"
+            if counter is None:
+                counter = self.read_mmsi()[1]
+        self.p.write_config_memory(self.MMSI_OFFSET, unhexlify(code) + _counter_byte(counter, "MMSI"))
 
     def read_atis(self):
-        data = hexlify(self.p.read_config_memory(self.ATIS_CODE_OFFSET, 6)).decode().upper()
-        atis = data[0:10]
-        status = data[10:12]
-        return atis, status
+        data = self.p.read_config_memory(self.ATIS_CODE_OFFSET, 6)
+        atis = hexlify(data[0:5]).decode().upper()
+        return atis, data[5]
 
-    def write_atis(self, atis: str = None, status: str = None):
+    def write_atis(self, atis: str = None, counter: int = None):
+        """
+        Program the ATIS code, or reset it to the factory state when None.
+        The update counter next to it is left as it is, unless given.
+        """
         if atis is None:
-            atis = "FFFFFFFFFF"
-            if status is None:
-                status = "00"
+            code = "FFFFFFFFFF"
+            if counter is None:
+                counter = 0
         else:
             if not (atis.isascii() and atis.isdecimal()):
                 raise ProtocolError("Invalid ATIS format")
-            if status is None:
-                status = "01"
-        if len(atis) != 10:
-            raise ProtocolError("Invalid ATIS length")
-        if status.upper() not in ["00", "01", "02", "FF"]:
-            raise ProtocolError("Invalid ATIS status")
-        data = unhexlify(atis + status)
-        self.p.write_config_memory(self.ATIS_CODE_OFFSET, data)
+            if len(atis) != 10:
+                raise ProtocolError("Invalid ATIS length")
+            code = atis
+            if counter is None:
+                counter = self.read_atis()[1]
+        self.p.write_config_memory(self.ATIS_CODE_OFFSET, unhexlify(code) + _counter_byte(counter, "ATIS"))
 
     def read_atis_enabled(self) -> Tuple[bool, int]:
         atis_config = ord(self.p.read_config_memory(self.ATIS_ENABLED_OFFSET, 1))

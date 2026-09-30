@@ -75,79 +75,63 @@ def fixture_config_890_simulator(cp_890_sim):
 
 
 def test_hx870_mmsi(sim_870_config):
-    mmsi, status = sim_870_config.read_mmsi()
-    assert mmsi == "872345900", "MMSI offset"
-    assert status == "03", "MMSI save counter"
+    assert sim_870_config.read_mmsi() == ("872345900", 3), "MMSI offset and update counter"
 
-    sim_870_config.write_mmsi(mmsi="318765432", status="02")
-    mmsi, status = sim_870_config.read_mmsi()
-    assert mmsi == "318765432", "MMSI write/read"
-    assert status == "02", "MMSI save counter write/read"
-
-    sim_870_config.write_mmsi()
-    mmsi, status = sim_870_config.read_mmsi()
-    assert mmsi == "FFFFFFFFF", "MMSI reset"
-    assert status == "00", "MMSI reset save counter"
-
-    sim_870_config.write_mmsi(mmsi="111222333")
-    mmsi, status = sim_870_config.read_mmsi()
-    assert mmsi == "111222333", "MMSI write/read with default save counter"
-    assert status not in ["00", "FF"], "save counter is set automatically"
+    sim_870_config.write_mmsi(mmsi="318765432")
+    assert sim_870_config.read_mmsi() == ("318765432", 3), "MMSI write leaves the update counter alone"
     raw = sim_870_config.p.read_config_memory(sim_870_config.MMSI_OFFSET, 5)
-    assert raw == unhexlify("1112223330"), "MMSI is stored with a zero as 10th digit"
+    assert raw == unhexlify("3187654320"), "MMSI is stored with a zero as 10th digit"
 
-    # The 10th digit is protocol padding and not for the caller to provide
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_mmsi(mmsi="1112223330")
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_mmsi(mmsi="1112223339")
-    assert sim_870_config.read_mmsi()[0] == "111222333", "rejected MMSI is not written"
+    sim_870_config.write_mmsi(mmsi="111222333", counter=7)
+    assert sim_870_config.read_mmsi() == ("111222333", 7), "explicit update counter"
 
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_mmsi(mmsi="12345678")  # too short
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_mmsi(mmsi="11111f111")  # not numeric
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_mmsi(mmsi="")  # empty
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_mmsi(mmsi="\u0669" * 9)  # digits, but not ASCII
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_mmsi(mmsi="123456789", status="gh")  # invalid save counter
+    sim_870_config.write_mmsi(counter=9)
+    assert sim_870_config.read_mmsi() == ("FFFFFFFFF", 9), "reset with explicit update counter"
+
+    sim_870_config.write_mmsi(mmsi="111222333", counter=7)
+    sim_870_config.write_mmsi()
+    assert sim_870_config.read_mmsi() == ("FFFFFFFFF", 0), "reset restores the factory state"
+
+    for bad_mmsi in ("12345678",  # too short
+                     "11111f111",  # not numeric
+                     "",  # empty
+                     "\u0669" * 9,  # digits, but not ASCII
+                     "1112223330",  # the 10th digit is protocol padding, not for the caller to provide
+                     "1112223339"):
+        with pytest.raises(protocol.ProtocolError):
+            sim_870_config.write_mmsi(mmsi=bad_mmsi)
+    for bad_counter in (-1, 256, "02", 1.5, True):
+        with pytest.raises(protocol.ProtocolError):
+            sim_870_config.write_mmsi(mmsi="123456789", counter=bad_counter)
+    assert sim_870_config.read_mmsi() == ("FFFFFFFFF", 0), "rejected writes change nothing"
 
 
 def test_hx870_atis(sim_870_config):
-    atis, status = sim_870_config.read_atis()
-    assert atis == "9723459000", "ATIS offset"
-    assert status == "05", "ATIS save counter"
+    assert sim_870_config.read_atis() == ("9723459000", 5), "ATIS offset and update counter"
 
-    sim_870_config.write_atis(atis="9318765432", status="02")
-    atis, status = sim_870_config.read_atis()
-    assert atis == "9318765432", "ATIS write/read"
-    assert status == "02", "ATIS save counter write/read"
+    sim_870_config.write_atis(atis="9318765432")
+    assert sim_870_config.read_atis() == ("9318765432", 5), "ATIS write leaves the update counter alone"
 
-    sim_870_config.write_atis()
-    atis, status = sim_870_config.read_atis()
-    assert atis == "FFFFFFFFFF", "ATIS reset"
-    assert status == "00", "ATIS reset save counter"
-
-    sim_870_config.write_atis(atis="9876543210")
-    atis, status = sim_870_config.read_atis()
-    assert status not in ["00", "FF"], "save counter is set automatically"
+    sim_870_config.write_atis(atis="9876543210", counter=2)
+    assert sim_870_config.read_atis() == ("9876543210", 2), "explicit update counter"
 
     # Ten digits are taken as they are, even without the leading 9
     sim_870_config.write_atis(atis="2987654321")
-    assert sim_870_config.read_atis()[0] == "2987654321", "ATIS content is trusted"
+    assert sim_870_config.read_atis() == ("2987654321", 2), "ATIS content is trusted"
 
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_atis(atis="987654321")  # too short
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_atis(atis="91111f1111")  # not numeric
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_atis(atis="")  # empty
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_atis(atis="\u0669" * 10)  # digits, but not ASCII
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.write_atis(atis="9876543210", status="gh")  # invalid save counter
+    sim_870_config.write_atis()
+    assert sim_870_config.read_atis() == ("FFFFFFFFFF", 0), "reset restores the factory state"
+
+    for bad_atis in ("987654321",  # too short
+                     "91111f1111",  # not numeric
+                     "",  # empty
+                     "\u0669" * 10):  # digits, but not ASCII
+        with pytest.raises(protocol.ProtocolError):
+            sim_870_config.write_atis(atis=bad_atis)
+    for bad_counter in (-1, 256, "02"):
+        with pytest.raises(protocol.ProtocolError):
+            sim_870_config.write_atis(atis="9876543210", counter=bad_counter)
+    assert sim_870_config.read_atis() == ("FFFFFFFFFF", 0), "rejected writes change nothing"
 
     atis_enabled, atis_config = sim_870_config.read_atis_enabled()
     assert not atis_enabled, "ATIS enabled offset"

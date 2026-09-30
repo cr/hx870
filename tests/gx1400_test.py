@@ -62,12 +62,8 @@ def test_gx1400_device(gx1400_sim):
 def test_gx1400_config_offsets(gx1400_sim):
     config = GX1400(gx1400_sim.tty).config
 
-    mmsi, mmsi_status = config.read_mmsi()
-    atis, atis_status = config.read_atis()
-    assert mmsi == "972001400", "MMSI"
-    assert mmsi_status == "01", "MMSI save counter"
-    assert atis == "9972001400", "ATIS"
-    assert atis_status == "06", "ATIS save counter"
+    assert config.read_mmsi() == ("972001400", 1), "MMSI and update counter"
+    assert config.read_atis() == ("9972001400", 6), "ATIS and update counter"
 
     atis_enabled, atis_config = config.read_atis_enabled()
     assert not atis_enabled, "ATIS enabled"
@@ -110,34 +106,28 @@ def test_gx1400_config_write(gx1400_sim, capsys):
     assert "8192 / 8192 bytes (100%)" in outerr.err
 
 
-@pytest.mark.xfail
-def test_gx1400_save_counters(gx1400_sim):
+def test_gx1400_counters(gx1400_sim):
+    # Reverse engineering of the vendor tooling showed that the byte after each
+    # code counts that code's updates: programming a different code increments
+    # it, clearing the code does not, but increments the clear counters at
+    # 0x0096 (MMSI) and 0x0097 (ATIS) instead. The radios themselves ignore
+    # the counters. hxtool leaves the update counter alone unless told
+    # otherwise, and a reset restores the factory state.
     config = GX1400(gx1400_sim.tty).config
+    clear_counters = config.p.read_config_memory(0x0096, 2)
 
-    # The "status" byte counts the number of times the code has been saved
-    config.write_mmsi(mmsi="876543210", status=6)
-    assert config.read_mmsi()[1] == 6
-    config.write_atis(atis="9876543210", status=7)
-    assert config.read_atis()[1] == 7
+    config.write_mmsi(mmsi="876543210")
+    assert config.read_mmsi() == ("876543210", 1), "update counter is left alone"
+    config.write_mmsi(mmsi="888777666", counter=6)
+    assert config.read_mmsi() == ("888777666", 6), "explicit update counter"
+    config.write_atis(atis="9998887770", counter=7)
+    assert config.read_atis() == ("9998887770", 7), "explicit update counter"
 
-    # Changing the code increments the save counter
-    config.write_mmsi(mmsi="888777666")
-    config.write_atis(atis="9998887770")
-    assert config.read_mmsi()[1] == 7
-    assert config.read_atis()[1] == 8
-
-    mmsi_clear_counter = ord(config.p.read_config_memory(0x0096, 1))
-    atis_clear_counter = ord(config.p.read_config_memory(0x0097, 1))
-
-    # Clearing the code doesn't change the save counter
-    config.write_mmsi(mmsi=None)
-    config.write_atis(atis=None)
-    assert config.read_mmsi()[1] == 7
-    assert config.read_atis()[1] == 8
-
-    # ... but increments the clear counter
-    assert ord(config.p.read_config_memory(0x0096, 1)) == mmsi_clear_counter + 1
-    assert ord(config.p.read_config_memory(0x0097, 1)) == atis_clear_counter + 1
+    config.write_mmsi()
+    config.write_atis()
+    assert config.read_mmsi() == ("FFFFFFFFF", 0), "reset restores the factory state"
+    assert config.read_atis() == ("FFFFFFFFFF", 0), "reset restores the factory state"
+    assert config.p.read_config_memory(0x0096, 2) == clear_counters, "clear counters are not touched"
 
 
 def test_hxtool_devices(capsys):
