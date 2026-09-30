@@ -45,6 +45,12 @@ def test_waypoint_parser():
     for key in locus.locus_content_descriptor(0x7f)["attributes"]:
         assert key in wp
 
+    descriptor = locus.locus_content_descriptor(0x7f)
+    assert wp._attributes == descriptor["attributes"] == [
+        "utc_time", "fix_type", "latitude", "longitude", "height", "speed", "heading"]
+    assert wp._labels == descriptor["labels"] == [
+        "UTC Time", "Fix Type", "Latitude", "Longitude", "Height", "Speed", "Heading"]
+
     assert wp["utc_time"] == 1562677769, "waypoint timestamp is correct"
     assert wp["fix_type"] == 2, "waypoint fix type is correct"
     assert abs(wp["latitude"] - 52.50891) < 1E-5, "waypoint latitude is close enough"

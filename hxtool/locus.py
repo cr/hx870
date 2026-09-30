@@ -126,7 +126,7 @@ class LocusWaypoint(object):
         self._size = content["size"]
         self._format = content["format"]
         self._attributes = content["attributes"]
-        self._labels = content["attributes"]
+        self._labels = content["labels"]
         self._d = {}
         if len(data) != content["size"] + 1:  # plus one checksum byte
             raise LocusError("Too much waypoint data")
