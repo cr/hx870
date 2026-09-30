@@ -153,6 +153,12 @@ def test_hx870_region(sim_870_config):
     sim_870_config.write_region(0xff)
     assert sim_870_config.read_region()[1] == 0xff, "region code write/read"
 
+    sim_870_config.write_region(73)
+    region, code = sim_870_config.read_region()
+    assert region == "", "unknown region"
+    assert code == 73, "region code"
+    sim_870_config.write_region(0xff)
+
     with pytest.raises(protocol.ProtocolError):
         data = bytearray(b"\xff" * 0x8000)
         data[0x010f] = 0x01

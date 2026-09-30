@@ -156,7 +156,7 @@ class GenericHXConfig(object):
 
     def read_region(self) -> Tuple[str, int]:
         region_code = ord(self.p.read_config_memory(self.REGION_CODE_OFFSET, 1))
-        region = region_code_map[region_code]
+        region = region_code_map.get(region_code, "")
         return region, region_code
 
     def write_region(self, region: int):

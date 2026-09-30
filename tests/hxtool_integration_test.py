@@ -75,6 +75,21 @@ def test_hxtool_info(capsys, kill_sims):
     assert HX870Sim.model in outerr.out
 
 
+def test_hxtool_info_unknown_region(capsys, kill_sims, monkeypatch):
+    del kill_sims
+    sim_start = HXSimulator.start
+
+    def start_with_unknown_region(self):
+        self.c[self.type.REGION_CODE_OFFSET] = 0x49
+        sim_start(self)
+
+    monkeypatch.setattr(HXSimulator, "start", start_with_unknown_region)
+
+    ret = main(["--simulator", "-t", "0", "info"])
+    assert ret == 0, "hxtool info copes with an unknown region code"
+    assert "Region:\t [49]" in capsys.readouterr().out
+
+
 def test_hxtool_id(capsys, kill_sims):
     del kill_sims
 
