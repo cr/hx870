@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from argparse import ArgumentError, ArgumentTypeError
+from argparse import ArgumentTypeError
 from binascii import hexlify, unhexlify
 from logging import getLogger
 import os
@@ -78,18 +78,19 @@ class PokeCommand(CliCommand):
                 logger.warning(f"Truncating data to "
                                f"{'0x%x' % length} byte{'s' if length != 1 else ''}")
             elif len(data) < length:
-                raise ArgumentError(None, f"Data to poke is shorter than {'0x%x' % length} bytes")
+                logger.error(f"Data to poke is shorter than {'0x%x' % length} bytes")
+                return 12
 
         if length > hx.config.CHUNK_SIZE:
-            raise ArgumentError(None,
-                                f"Can't {'peek' if data is None else 'poke'} "
-                                f"more than {'0x%X' % hx.config.CHUNK_SIZE} bytes at once "
-                                f"on {type(hx).__name__}")
+            logger.error(f"Can't {'peek' if data is None else 'poke'} "
+                         f"more than {'0x%X' % hx.config.CHUNK_SIZE} bytes at once "
+                         f"on {type(hx).__name__}")
+            return 12
         if offset + length > hx.config.CONFIG_SIZE:
-            raise ArgumentError(None,
-                                f"Can't {'peek' if data is None else 'poke'} "
-                                f"past the end of the {type(hx).__name__}'s memory "
-                                f"at offset {'0x%X' % hx.config.CONFIG_SIZE}")
+            logger.error(f"Can't {'peek' if data is None else 'poke'} "
+                         f"past the end of the {type(hx).__name__}'s memory "
+                         f"at offset {'0x%X' % hx.config.CONFIG_SIZE}")
+            return 12
 
         hx.comm.sync()
 

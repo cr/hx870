@@ -55,6 +55,13 @@ GPS logs can now be exported and erased. Supported output formats are GPX, JSON,
 `hxtool gpslog` should dump some log content to screen if radio is in programming mode.
 See `hxtool gpslog --help` for usage info.
 
+## Raw memory access
+
+`hxtool poke <hex offset> [<hex data>] [-l <hex length>]` reads (peek) or writes (poke)
+bytes of the config memory directly, at most one transfer chunk at a time. It skips the
+dump-edit-flash cycle for small changes, and it corrupts the device just as easily.
+See the disclaimer above.
+
 ## HX870 USB protocol
 
 The hardware exposes three USB endpoints, EP0, EP1, and EP2. EP0 is a control endpoint.
