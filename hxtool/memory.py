@@ -45,36 +45,57 @@ def unpack_waypoint(data):
 
 
 def pack_waypoint(wp):
-    m = match(r"""(\d+)([NS])(\d+\.\d+)""", wp["latitude"].upper())
-    if m is None:
-        raise protocol.ProtocolError("Invalid waypoint latitude format")
-    lat_deg = int(m[1])
-    lat_dir = m[2]
-    lat_min = float(m[3])
-    lat_minstr = ("%.04f" % lat_min).replace(".", "").zfill(6)
-    lat_hex = "F%03d%s%s" % (lat_deg, lat_minstr, lat_dir)
-    if len(lat_hex) != 12:
-        raise protocol.ProtocolError("Invalid waypoint latitude format")
+    """
+    Inverse of unpack_waypoint. Positions are given like "54N41.5717" and
+    "12E35.9567", i.e. whole degrees, hemisphere, and decimal minutes.
+    """
+    try:
+        wp_id = int(wp["id"])
+        if not 1 <= wp_id <= 254:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        raise protocol.ProtocolError("Invalid waypoint id")
 
-    m = match(r"""(\d+)([EW])(\d+\.\d+)""", wp["longitude"].upper())
-    if m is None:
-        raise protocol.ProtocolError("Invalid waypoint longitude format")
-    lon_deg = int(m[1])
-    lon_dir = m[2]
-    lon_min = float(m[3])
-    lon_minstr = ("%.04f" % lon_min).replace(".", "").zfill(6)
-    lon_hex = "%04d%s%s" % (lon_deg, lon_minstr, lon_dir)
-    if len(lon_hex) != 12:
-        raise protocol.ProtocolError("Invalid waypoint longitude format")
+    try:
+        wp_name = wp["name"].encode("ascii")
+    except (KeyError, AttributeError, UnicodeEncodeError):
+        raise protocol.ProtocolError("Invalid waypoint name")
+    if len(wp_name) > 15:
+        raise protocol.ProtocolError("Waypoint name too long")
 
-    wp_data = b'\xff'*4 + unhexlify(lat_hex) + lat_dir.encode("ascii")
-    wp_data += unhexlify(lon_hex) + lon_dir.encode("ascii")
-    wp_data += wp["name"].encode("ascii")[:15].ljust(15, b'\xff')
-    wp_data += unhexlify("%02x" % wp["id"])  # TODO: There must be an elegant way
+    wp_mmsi = wp.get("mmsi")
+    if wp_mmsi is None:
+        mmsi_hex = "ff" * 5
+    elif type(wp_mmsi) is str and wp_mmsi.isascii() and wp_mmsi.isdecimal() and len(wp_mmsi) == 9:
+        mmsi_hex = wp_mmsi + "0"  # DSC coding uses ten digits, the last one zero
+    else:
+        raise protocol.ProtocolError("Invalid waypoint MMSI")
+
+    lat_hex = _pack_position(wp.get("latitude"), "NS", 90, 2, "latitude")
+    lon_hex = _pack_position(wp.get("longitude"), "EW", 180, 3, "longitude")
+
+    wp_data = unhexlify(mmsi_hex)
+    wp_data += unhexlify(lat_hex[:-1]) + lat_hex[-1].encode("ascii")
+    wp_data += unhexlify("0" + lon_hex[:-1]) + lon_hex[-1].encode("ascii")
+    wp_data += wp_name.ljust(15, b"\xff")
+    wp_data += bytes([wp_id])
     if len(wp_data) != 32:
-        raise protocol.ProtocolError("Waypoint encoding error")
+        raise protocol.InternalError("Waypoint encoding error")
 
     return wp_data
+
+
+def _pack_position(position, hemispheres: str, max_degrees: int, degree_digits: int, what: str) -> str:
+    """
+    Pack "54N41.5717" into the BCD digits "54415717" followed by the hemisphere letter.
+    """
+    m = match(r"""^(\d+)([A-Z])(\d+(?:\.\d+)?)$""", str(position).upper())
+    if m is None or m[2] not in hemispheres:
+        raise protocol.ProtocolError(f"Invalid waypoint {what} format")
+    degrees, hemisphere, minutes = int(m[1]), m[2], round(float(m[3]) * 10000)
+    if degrees > max_degrees or minutes >= 600000 or (degrees == max_degrees and minutes > 0):
+        raise protocol.ProtocolError(f"Waypoint {what} out of range")
+    return f"{degrees:0{degree_digits}d}{minutes:06d}{hemisphere}"
 
 
 region_code_map = {

@@ -185,6 +185,19 @@ SAMPLE_DAT = unhexlify(
     b'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
 
 
+def test_waypoint_serializer():
+    # The record from test_waypoint_parser, in its stored form
+    content = 0x7f
+    for hex_data in ("0992245D02200952422861574130000D0027019D",):
+        data = unhexlify(hex_data)
+        wp = locus.LocusWaypoint(content, data)
+        assert bytes(wp) == data, "serializing a waypoint reproduces its stored bytes"
+
+        wp["height"] = 12
+        assert bytes(wp) != data
+        assert locus.LocusWaypoint(content, bytes(wp))["height"] == 12, "modified waypoint round-trips"
+
+
 def test_locus_parser():
     loc = locus.Locus(SAMPLE_DAT, verify=True)
     assert len(loc) == 124

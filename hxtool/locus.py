@@ -5,12 +5,10 @@ from enum import Enum, IntFlag
 from struct import pack, unpack, error as StructError
 from functools import reduce
 
+from .protocol import InternalError
+
 
 class LocusError(Exception):
-    pass
-
-
-class InternalError(Exception):
     pass
 
 
@@ -148,7 +146,7 @@ class LocusWaypoint(object):
         values = []
         for attr in self._attributes:
             values.append(self._d[attr])
-        packed = pack(self._format, values)
+        packed = pack(self._format, *values)
         packed += bytes([checksum(packed)])
         return packed
 

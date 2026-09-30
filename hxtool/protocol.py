@@ -15,6 +15,10 @@ class ProtocolError(Exception):
     pass
 
 
+class InternalError(Exception):
+    pass
+
+
 class Message(object):
     """
     Generic HX Message Object
