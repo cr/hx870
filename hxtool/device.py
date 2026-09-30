@@ -153,9 +153,9 @@ class HX870(object):
     handle = "HX870"
     brand = "Standard Horizon"
     model = "HX870"
-    usb_vendor_id = 9898
+    usb_vendor_id = 0x26aa
     usb_vendor_name = "YAESU MUSEN CO.,LTD."
-    usb_product_id = 16
+    usb_product_id = 0x0010
     usb_product_name = "HX870"
 
     protocol_model = GenericHXProtocol
@@ -226,9 +226,9 @@ class HX890(HX870):
     handle = "HX890"
     brand = "Standard Horizon"
     model = "HX890"
-    usb_vendor_id = 9898
+    usb_vendor_id = 0x26aa
     usb_vendor_name = "YAESU MUSEN CO.,LTD."
-    usb_product_id = 30
+    usb_product_id = 0x001e
     usb_product_name = "HX890"
 
     config_model = HX890Config
@@ -244,7 +244,7 @@ class HX891(HX890):
     model = "HX891BT"
     usb_vendor_id = 0x26aa
     usb_vendor_name = "YAESU MUSEN CO.,LTD."
-    usb_product_id = 0x2e
+    usb_product_id = 0x002e
     usb_product_name = "HX890"
 
     config_model = HX891Config
@@ -262,11 +262,11 @@ class GX1400(HX870):
     usb_vendor_name = None
     usb_product_id = None
     usb_product_name = None
-    flash_id = ["AM065N"]
 
     protocol_model = GX1400Protocol
     config_model = GX1400Config
     nmea_model = None
+    gps_model = None
 
     def init_config(self):
         # Verify we're talking to a GX1400 on that tty
@@ -299,7 +299,7 @@ class HX870Sim(HX870):
     """
     handle = "HX870SIM"
     model = "HX870S Simulator"
-    usb_product_id = 1616
+    usb_product_id = 0x0650
     usb_product_name = "HX870S"
 
 
@@ -309,7 +309,7 @@ class HX890Sim(HX890):
     """
     handle = "HX890SIM"
     model = "HX890S Simulator"
-    usb_product_id = 3030
+    usb_product_id = 0x0bd6
     usb_product_name = "HX890S"
 
 
@@ -319,7 +319,7 @@ class HX891Sim(HX891):
     """
     handle = "HX891SIM"
     model = "HX891BT Simulator"
-    usb_product_id = 4242
+    usb_product_id = 0x1092
     usb_product_name = "HX891S"
 
 
