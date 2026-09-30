@@ -7,13 +7,12 @@ from logging import getLogger
 from sys import exit, argv, stdout
 
 import coloredlogs
-from pkg_resources import require
+from importlib.metadata import version
 
 import hxtool.cli
+from hxtool.protocol import ProtocolError
 from hxtool.simulator import HXSimulator
 
-coloredlogs.DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
-coloredlogs.install(level="INFO")
 logger = getLogger(__name__)
 
 
@@ -23,7 +22,7 @@ def get_args(args=None):
     :return: Argument parser object
     """
 
-    pkg_version = require("hxtool")[0].version
+    pkg_version = version("hxtool")
 
     parser = ArgumentParser(prog="hxtool")
     parser.add_argument("--version", action="version", version="%(prog)s " + pkg_version)
@@ -40,7 +39,7 @@ def get_args(args=None):
     parser.add_argument("-m", "--model",
                         help="force device model",
                         type=str.upper,
-                        choices=["HX870", "HX890"],
+                        choices=hxtool.device.models.keys(),
                         action="store")
 
     parser.add_argument("--simulator",
@@ -66,15 +65,17 @@ def at_exit():
     logger.debug("Backround threads finished")
 
 
-# This is the entry point used in setup.py
+# This is the entry point used in pyproject.toml
 def main(main_args=None):
     global logger
 
     args = get_args(main_args)
 
+    # Logging is configured here and not at import, so that the package stays quiet as a library
     if args.debug:
-        coloredlogs.DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
-        coloredlogs.install(level="DEBUG")
+        coloredlogs.install(level="DEBUG", fmt="%(asctime)s %(levelname)s %(name)s %(message)s")
+    else:
+        coloredlogs.install(level="INFO", fmt="%(asctime)s %(levelname)s %(message)s")
 
     logger.debug("Command arguments: %s" % args)
 
@@ -86,6 +87,14 @@ def main(main_args=None):
         stdout.flush()
         logger.critical("User abort")
         result = 5
+
+    except ProtocolError as e:
+        logger.critical(f"Protocol error ({e})")
+        result = 10
+
+    except TimeoutError as e:
+        logger.critical(f"Device timeout ({e})")
+        result = 10
 
     except OSError as e:
         logger.critical(f"Connection lost ({e})")

@@ -32,7 +32,7 @@ def get(args):
     devices = device.enumerate(force_model=args.model, force_device=args.tty, add_simulator=args.simulator)
 
     if len(devices) == 0:
-        logger.critical("No device detected. Connect device or try specifying --tty")
+        logger.critical("No device detected. Connect device or try specifying --tty and --model")
         return None
 
     if len(devices) > 1:

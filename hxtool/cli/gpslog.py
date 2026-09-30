@@ -51,6 +51,10 @@ class GpsLogCommand(CliCommand):
             logger.critical("For GPS log functions, device must be in CP mode (MENU + ON)")
             return 10
 
+        if hx.gps is None:
+            logger.critical(f"GPS log functions are not supported by {hx.handle}")
+            return 10
+
         result = 0
 
         hx.gps.send("$PMTK", ["605"])  # Query GPS module firmware version
@@ -76,20 +80,22 @@ class GpsLogCommand(CliCommand):
         else:
             raw_log_data = None
 
-        if self.args.print:
-            result = max(dump_log(raw_log_data), result)
+        if raw_log_data is not None:
 
-        if self.args.gpx:
-            logger.info("Exporting GPX log data to `%s`", self.args.gpx)
-            result = max(write_gpx(raw_log_data, self.args.gpx), result)
+            if self.args.print:
+                result = max(dump_log(raw_log_data), result)
 
-        if self.args.json:
-            logger.info("Exporting JSON log data to `%s`", self.args.json)
-            result = max(write_json(raw_log_data, self.args.json), result)
+            if self.args.gpx:
+                logger.info("Exporting GPX log data to `%s`", self.args.gpx)
+                result = max(write_gpx(raw_log_data, self.args.gpx), result)
 
-        if self.args.raw:
-            logger.info("Exporting raw log data to `%s`", self.args.raw)
-            result = max(write_raw(raw_log_data, self.args.raw), result)
+            if self.args.json:
+                logger.info("Exporting JSON log data to `%s`", self.args.json)
+                result = max(write_json(raw_log_data, self.args.json), result)
+
+            if self.args.raw:
+                logger.info("Exporting raw log data to `%s`", self.args.raw)
+                result = max(write_raw(raw_log_data, self.args.raw), result)
 
         if self.args.erase:
             logger.info("Erasing GPS log data from device")
@@ -118,7 +124,7 @@ def write_gpx(log_data: bytes, file_name: str) -> int:
     # Create points:
     for point in log:
         p = gpxpy.gpx.GPXTrackPoint(
-            time=datetime.datetime.utcfromtimestamp(point["utc_time"]),
+            time=utc_time(point["utc_time"]),
             latitude=point["latitude"],
             longitude=point["longitude"],
             elevation=point["height"]
@@ -161,10 +167,18 @@ def write_raw(log_data: bytes, file_name: str) -> int:
     return 0
 
 
+def utc_time(timestamp: int) -> datetime.datetime:
+    return datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
+
+
 def to_hm(deg: float) -> (int, float):
-    minutes, minutes_remainder = divmod(deg, 1/60)
-    hours, minutes = divmod(minutes, 60)
-    return int(hours), minutes + 60 * minutes_remainder
+    """
+    Split degrees into whole degrees and minutes, disregarding the sign.
+    Minutes are rounded to the four decimals that get printed, so that
+    they can never show up as 60.0000.
+    """
+    degrees, minutes = divmod(round(abs(deg) * 600000), 600000)
+    return degrees, minutes / 10000
 
 
 def dump_log(log_data):
@@ -175,12 +189,12 @@ def dump_log(log_data):
         return 0
     for wp in log:
         lat_deg, lat_min = to_hm(wp['latitude'])
-        lat_dir = 'N' if lat_deg >= 0 else 'S'
+        lat_dir = 'N' if wp['latitude'] >= 0 else 'S'
         lon_deg, lon_min = to_hm(wp['longitude'])
-        lon_dir = 'E' if lat_deg >= 0 else 'W'
-        print(f"{datetime.datetime.utcfromtimestamp(wp['utc_time']).isoformat()}\t"
-              f"{abs(lat_deg):02d}°{lat_min:07.04f}{lat_dir}\t"
-              f"{abs(lon_deg):03d}°{lon_min:07.04f}{lon_dir}\t"
+        lon_dir = 'E' if wp['longitude'] >= 0 else 'W'
+        print(f"{utc_time(wp['utc_time']).strftime('%Y-%m-%dT%H:%M:%SZ')}\t"
+              f"{lat_deg:02d}°{lat_min:07.04f}{lat_dir}\t"
+              f"{lon_deg:03d}°{lon_min:07.04f}{lon_dir}\t"
               f"{wp['height']:d}m\t"
               f"{wp['heading']:3d}°\t"
               f"{wp['speed']:2d}m/s\t")

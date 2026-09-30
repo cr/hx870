@@ -96,14 +96,9 @@ def run(args) -> int:
             logger.critical("Setup failed")
             return 10
         logger.debug("Running command .run()")
-        result = current_command.run()
+        return current_command.run()
 
-    except KeyboardInterrupt:
+    finally:
+        # Whatever happened, the command gets to clean up
         logger.debug("Running command .teardown()")
         current_command.teardown()
-        raise KeyboardInterrupt
-
-    logger.debug("Running command .teardown()")
-    current_command.teardown()
-
-    return result

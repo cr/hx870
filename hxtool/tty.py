@@ -11,7 +11,7 @@ class GenericHXTTY(object):
     Serial communication for Standard Horizon HX maritime radios
     """
 
-    def __init__(self, tty, timeout=2):
+    def __init__(self, tty, timeout=2, baudrate=9600):
         """
         Serial connection class for HX870 handsets
 
@@ -21,7 +21,7 @@ class GenericHXTTY(object):
         self.tty = tty
         logger.debug(f"Connecting to {tty}")
         self.default_timeout = timeout
-        self.s = Serial(tty, timeout=timeout)
+        self.s = Serial(tty, baudrate, timeout=timeout)
         self.s.flushInput()
         self.s.flushOutput()
 
@@ -53,9 +53,10 @@ class GenericHXTTY(object):
     def available(self):
         return self.s.in_waiting
 
-    def flush_input(self):
+    def flush_input(self, expected=False):
         if self.s.in_waiting > 0:
-            logger.warning(f"{self.tty} flushing {self.s.in_waiting} bytes from input buffer")
+            message = f"{self.tty} flushing {self.s.in_waiting} bytes from input buffer"
+            logger.debug(message) if expected else logger.warning(message)
         return self.s.flushInput()
 
     def flush_output(self):

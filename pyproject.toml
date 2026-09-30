@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hxtool"
+version = "0.3.2"
+description = "Tool for Yaesu / Standard Horizon HX series radio flashing and configuration"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "GPL-3.0-only"
+license-files = ["LICENSE.txt"]
+authors = [
+    { name = "Christiane Ruetten", email = "cr@23bit.net" },
+]
+keywords = [
+    "hamradio", "radio", "maritime", "yaesu", "standard horizon", "hx870", "hx870e",
+    "hx890", "hx890e", "firmware", "flashing", "mmsi", "atis",
+]
+classifiers = [
+    "Environment :: Console",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Customer Service",
+    "Natural Language :: English",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Communications :: Ham Radio",
+]
+dependencies = [
+    "coloredlogs",
+    "gpxpy",
+    "ipython",
+    "pyserial",
+]
+
+[project.optional-dependencies]
+dev = [
+    "coverage",
+    "pycodestyle",
+    "pytest",
+    "pytest-pycodestyle",
+]
+
+[project.urls]
+Homepage = "https://github.com/cr/hx870"
+Download = "https://github.com/cr/hx870/archive/master.tar.gz"
+
+[project.scripts]
+hxtool = "hxtool.main:main"
+
+[tool.setuptools.packages.find]
+include = ["hxtool*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "hxtool"]
+addopts = "--pycodestyle --strict-markers"
+markers = [
+    "slow",
+    "wip",
+]

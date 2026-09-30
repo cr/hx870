@@ -15,6 +15,10 @@ class ProtocolError(Exception):
     pass
 
 
+class InternalError(Exception):
+    pass
+
+
 class Message(object):
     """
     Generic HX Message Object
@@ -30,7 +34,10 @@ class Message(object):
 
         if parse is not None:
             if type(parse) is bytes:
-                parse = parse.decode("ascii")
+                try:
+                    parse = parse.decode("ascii")
+                except UnicodeDecodeError as e:
+                    raise ProtocolError(f"Invalid message `{parse}`") from e
             if parse.startswith("#"):
                 # CP mode command message
                 parsed = parse.rstrip("\r\n").split("\t")
@@ -42,6 +49,8 @@ class Message(object):
             elif parse.startswith("$"):
                 # NMEA sentence
                 parsed = parse.rstrip("\r\n")
+                if parsed.count("*") != 1:
+                    raise ProtocolError(f"Invalid message `{parse}`")
                 self.type = parsed[:5]
                 args, self.checksum_recv = parsed[5:].split("*")
                 self.args = args.split(",")
@@ -61,10 +70,10 @@ class Message(object):
             return None
         elif self.type.startswith("#"):
             check = ("\t".join([self.type] + self.args) + "\t").encode("ascii")
-            return "%02X" % reduce(lambda x, y: x ^ y, filter(lambda x: x != "!", check))
+            return "%02X" % reduce(lambda x, y: x ^ y, check)
         elif self.type.startswith("$"):
             check = (self.type[1:] + ",".join(self.args)).encode("ascii")
-            return "%02X" % reduce(lambda x, y: x ^ y, filter(lambda x: x != "!", check))
+            return "%02X" % reduce(lambda x, y: x ^ y, check)
         else:
             return None
 
@@ -121,14 +130,26 @@ class Message(object):
                 yield cls(parse=message)
 
 
+def _is_text(data: bytes) -> bool:
+    """Printable ASCII lines, as a partial NMEA sentence looks like"""
+    return len(data) > 0 and all(0x20 <= b < 0x7f or b in b"\r\n" for b in data)
+
+
 class GenericHXProtocol(object):
 
-    def __init__(self, tty=None):
+    def __init__(self, tty=None, identified=False):
+        """
+        identified: the port is known to belong to an HX radio (USB metadata, or the
+        user forced the model), so silence means NMEA mode with a quiet GPS rather
+        than unknown hardware
+        """
         self.conn = None
         self.connected = False
+        self.identified = identified
         self.hx_hardware = False
         self.cp_mode = False
         self.nmea_mode = False
+        self.nmea_output_seen = False
         self.__connect(tty)
 
     def __connect(self, tty):
@@ -149,44 +170,45 @@ class GenericHXProtocol(object):
 
     def __detect_device_mode(self):
 
-        # In NMEA mode, an HX device replies with "P" to "P", and with nothing to "?"
-        # In CP mode, an HX device replies with "@" to "?", and with nothing to "P"
-        # Hence an HX device will reply to "?P" with
-        #   - "P" if it is in NMEA mode, and
-        #   - "?" if it is in CP mode
+        # In CP mode, an HX device replies with "@" to "?" and ignores "P".
+        # In NMEA mode, some firmware replies with "P" to "P" (seen on HX891BT),
+        # some ignores it (seen on HX870). Either way the GPS module sends NMEA
+        # sentences, unless GPS output is disabled or the module is asleep
+        # (power save). Whatever arrives may start in the middle of a sentence,
+        # so everything received within the timeout is classified as a whole.
 
-        self.conn.flush_input()
+        self.conn.flush_input(expected=True)  # old NMEA output, if any
         self.conn.flush_output()
 
         self.conn.write(b"P?")
-        try:
-            r = self.conn.read(1)
-        except TimeoutError:
-            logger.warning("No response, so probably not talking to HX hardware")
-            self.hx_hardware = False
-            self.nmea_mode = False
-            self.cp_mode = False
-            return
+        received = b""
+        deadline = time() + self.conn.default_timeout
+        while time() < deadline:
+            try:
+                received += self.conn.read(1)
+            except TimeoutError:
+                break
+            if b"@" in received or b"$" in received:
+                break
 
-        if r == b"P" or r == b"$":
-            # There's sometimes a race condition where the firmware sends
-            # a NMEA message before it replies with "P", so flush.
-            if r == b"$":
-                logger.debug("Probable race condition with NMEA message detected, assuming NMEA mode")
-                self.conn.flush_input()
-            logger.debug("Response like HX hardware in NMEA mode")
-            self.hx_hardware = True
-            self.nmea_mode = True
-            self.cp_mode = False
-
-            return
-
-        if r == b"@":
+        if b"@" in received:
             logger.debug("Response like HX hardware in CP mode")
-            self.hx_hardware = True
-            self.nmea_mode = False
-            self.cp_mode = True
-            return
+            self.hx_hardware, self.cp_mode, self.nmea_mode = True, True, False
+        elif received == b"P":
+            logger.debug("Response like HX hardware in NMEA mode, no GPS output yet")
+            self.hx_hardware, self.cp_mode, self.nmea_mode = True, False, True
+        elif b"$" in received or _is_text(received):
+            logger.debug("NMEA output like HX hardware in NMEA mode")
+            self.hx_hardware, self.cp_mode, self.nmea_mode = True, False, True
+            self.nmea_output_seen = True
+            self.conn.flush_input(expected=True)
+        elif not received and self.identified:
+            logger.info("No response to handshake, assuming NMEA mode with GPS output off or asleep")
+            self.hx_hardware, self.cp_mode, self.nmea_mode = True, False, True
+        elif not received:
+            logger.warning("No response, so probably not talking to HX hardware")
+        else:
+            logger.warning(f"Unexpected response {received!r}, so probably not talking to HX hardware")
 
     def available(self):
         return self.conn.available()
@@ -212,6 +234,8 @@ class GenericHXProtocol(object):
         # in spurious system and text messages. These are also ignored per default.
         while True:
             m = Message(parse=self.read_line())
+            if not m.validate():
+                raise ProtocolError(f"Checksum mismatch in message from device: {str(m).strip()}")
             if ignore_full_stop and m.type == "$PMTK" and m.args == ["LOG", "FULL_STOP"]:
                 logger.debug(f"Ignoring GPS module FULL_STOP warning {str(m).strip()}")
                 continue
@@ -306,7 +330,7 @@ class GenericHXProtocol(object):
             logger.debug("Device reported expected flash ID %s", fid)
             return True
         else:
-            logger.warning(f"Flash ID mismatch. Device reported {fid}, expected {flash_id}")
+            logger.debug(f"Flash ID mismatch. Device reported {fid}, expected {flash_id}")
             return False
 
     def wait_for_ready(self, timeout=1):
@@ -327,7 +351,17 @@ class GenericHXProtocol(object):
         if radio_status != "00":
             raise TimeoutError("Device not ready")
 
+    # The address and length fields of config memory transfers are two and one byte wide
+    MAX_TRANSFER = 0xff
+
+    def _check_transfer(self, offset, length):
+        if not 0 <= offset <= 0xffff:
+            raise ProtocolError(f"Config memory offset 0x{offset:x} out of range")
+        if not 1 <= length <= self.MAX_TRANSFER:
+            raise ProtocolError(f"Config memory transfer length {length} out of range (1-{self.MAX_TRANSFER})")
+
     def read_config_memory(self, offset, length):
+        self._check_transfer(offset, length)
         self.wait_for_ready()
         self.send("#CEPRD", ["%04X" % offset, "%02X" % length])
         r = self.receive()  # expect #CMDOK
@@ -337,9 +371,17 @@ class GenericHXProtocol(object):
         if d.type != "#CEPDT":
             raise ProtocolError("Device did not reply with data")
         self.send("#CMDOK")
-        return unhexlify(d.args[2])
+        try:
+            reply_offset, reply_length, data = int(d.args[0], 16), int(d.args[1], 16), unhexlify(d.args[2])
+        except (IndexError, ValueError) as e:
+            raise ProtocolError(f"Unexpected data reply format from device: {str(d).strip()}") from e
+        if reply_offset != offset or reply_length != length or len(data) != length:
+            raise ProtocolError(f"Unexpected data reply from device: requested {length} bytes at 0x{offset:04x}, "
+                                f"got {len(data)} bytes labeled as {reply_length} bytes at 0x{reply_offset:04x}")
+        return data
 
     def write_config_memory(self, offset, data):
+        self._check_transfer(offset, len(data))
         self.wait_for_ready()
         data_string = hexlify(data).decode("ascii").upper()
         self.send("#CEPWR", ["%04X" % offset, "%02X" % len(data), data_string])
@@ -512,3 +554,74 @@ class MediaTekProtocol(object):
         r = self.receive()
         if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "184", "3"]:
             raise ProtocolError(f"Unexpected EraseLog acknowledgement from device: {str(r).strip()}")
+
+
+class GX1400Protocol(GenericHXProtocol):
+
+    baudrate = 38400
+
+    def __init__(self, tty=None, identified=False):
+        self.conn = None
+        self.connected = False
+        self.identified = identified
+        self.hx_hardware = False
+        self.cp_mode = False
+        self.nmea_mode = False
+        self.nmea_output_seen = False
+        self.__connect(tty)
+
+    def __connect(self, tty):
+        self.conn = hxtty.GenericHXTTY(tty, baudrate=self.baudrate)
+        self.connected = True
+        logger.debug("Attempting GX1400 sync")
+        try:
+            self.sync()
+        except TimeoutError:
+            logger.warning("No response, so probably not talking to GX1400")
+            self.hx_hardware = False
+            self.cp_mode = False
+            return
+
+        logger.debug("Sync successful, assuming GX1400 hardware and CP mode")
+        self.hx_hardware = True
+        self.cp_mode = True
+
+        # On the GX1400, there doesn't appear to be a distinction between
+        # CP mode and command mode. The device is immediately ready for use.
+        # However, since it's a generic serial link, there is no way to know
+        # in advance whether or not the connected device is in fact a GX1400.
+
+        # NMEA mode is currently not detected. The device can be configured to
+        # send NMEA data at 38400 baud, so adding this feature here may not be
+        # too difficult. But given that NMEA data comes in from the GX1400 over
+        # a regular serial link rather than USB, dedicated NMEA software is
+        # probably more suited than hxtool for reading it anyway.
+
+    def get_firmware_version(self):
+        self.sync()
+        data = hexlify(self.read_config_memory(0x1d, 3)).decode()
+        return (data[1] if data.startswith("0") else data[0:2]) + "." + data[2:4]
+
+    def get_flash_id(self):
+        self.sync()
+        return self.read_config_memory(0x98, 7).rstrip(b"\x00\xff").decode("ascii")
+
+
+class ReadMagicProtocol(GenericHXProtocol):
+
+    def __init__(self, tty=None, baudrate=38400):
+        self.hx_hardware = False
+        try:
+            logger.debug(f"Trying `{tty}` sync at {baudrate} baud")
+            self.conn = hxtty.GenericHXTTY(tty, baudrate=baudrate)
+            self.sync()
+            self.hx_hardware = True
+        except TimeoutError:
+            logger.debug("No response, so probably wrong baudrate or not a supported device")
+            return
+        except ProtocolError:
+            logger.debug("Unexpected response, so probably not a supported device")
+            return
+        except OSError as e:
+            logger.debug(f"OS error: {e} (ignoring, so we can look at other devices)")
+            return

@@ -4,6 +4,15 @@ from os import path, stat
 
 
 class ConfigFile(object):
+    """
+    Container for an HX870 config memory image as the vendor's .DAT file
+    stores it: the 32 KiB image, framed by the config magic 0x0367 (871) at
+    both ends. See hx870dat.bt for the layout of the image itself.
+
+    Reading checks extension, size and magic only. Parsing the content
+    into fields (`p`) is not implemented, and nothing in hxtool uses this
+    class yet; it is kept as the record of the file format.
+    """
 
     MAGIC = b'\x03\x67'
 

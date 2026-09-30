@@ -2,7 +2,20 @@
 
 Here's my collection of experimental Python code and reverse engineering notes
 for hacking the Standard Horizon HX-style maritime radios by Yaesu. Currently supported
-are the *HX870* and *HX890* model series. The code also works on FT750-style aviation
+are the **HX870**, **HX890**, and **GX1400** model series.
+
+Radios in "CP mode" are usually automatically detected when connected.
+You can also manually select devices with the `--tty` or `--model` CLI options.
+
+The GX1400 has no USB port and is connected to a RS-232 style serial port.
+The GX1400 connector wiring is as follows. See the [SHsync](https://mbof.github.io/hx/) docs for a
+[diagram of the DE-9 connector pin-out](https://github.com/mbof/hxsync/blob/main/gx.md#wiring-diagram).
+
+* `RxD`: accessory cable white
+* `TxD`: accessory cable yellow
+* `GND`: accessory cable green + speaker cable shield
+
+The code also works on FT750-style aviation
 radios, which share the same hardware platform, to some degree as well, but that
 functionality is not exposed on the command line frontend, yet.
 
@@ -16,11 +29,9 @@ functionality is not exposed on the command line frontend, yet.
 
 ## Installation
 
-**This software does not work with Python 2.7!** It produces just a cryptic error message.
-
 The code is hardly documented and largely user-unfriendly and I am feeling
 slightly awful about it. However, you may install the command line tool into your
-(preferably virtual) *Python 3.6+* environment via
+(preferably virtual) *Python 3.8+* environment via
 `pip install git+https://github.com/cr/hx870`. Then see `hxtool --help` for usage
 information.
 
@@ -38,11 +49,18 @@ It is still incomplete and currently only documented in form of a
 If you can C and figure out their custom lingo for defining bitfields, you'll have
 no trouble reading it.
 
-## Experimantal support for GPS log
+## Experimental support for GPS log
 
 GPS logs can now be exported and erased. Supported output formats are GPX, JSON, and raw log bytes.
 `hxtool gpslog` should dump some log content to screen if radio is in programming mode.
 See `hxtool gpslog --help` for usage info.
+
+## Raw memory access
+
+`hxtool poke <hex offset> [<hex data>] [-l <hex length>]` reads (peek) or writes (poke)
+bytes of the config memory directly, at most one transfer chunk at a time. It skips the
+dump-edit-flash cycle for small changes, and it corrupts the device just as easily.
+See the disclaimer above.
 
 ## HX870 USB protocol
 
@@ -196,6 +214,7 @@ After a full reboot, those values are replaced by all FF.
 
 ## Testing notes
 
+ - `pip install -e '.[dev]'` - installing the development dependencies
  - `pytest -v` - running the test suite
  - `pytest --cov=hxtool --cov-report=term` - running test coverage
 

@@ -45,6 +45,12 @@ def test_waypoint_parser():
     for key in locus.locus_content_descriptor(0x7f)["attributes"]:
         assert key in wp
 
+    descriptor = locus.locus_content_descriptor(0x7f)
+    assert wp._attributes == descriptor["attributes"] == [
+        "utc_time", "fix_type", "latitude", "longitude", "height", "speed", "heading"]
+    assert wp._labels == descriptor["labels"] == [
+        "UTC Time", "Fix Type", "Latitude", "Longitude", "Height", "Speed", "Heading"]
+
     assert wp["utc_time"] == 1562677769, "waypoint timestamp is correct"
     assert wp["fix_type"] == 2, "waypoint fix type is correct"
     assert abs(wp["latitude"] - 52.50891) < 1E-5, "waypoint latitude is close enough"
@@ -183,6 +189,31 @@ SAMPLE_DAT = unhexlify(
     b'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
     b'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
     b'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+
+
+def test_waypoint_serializer():
+    # The record from test_waypoint_parser, in its stored form
+    content = 0x7f
+    for hex_data in ("0992245D02200952422861574130000D0027019D",):
+        data = unhexlify(hex_data)
+        wp = locus.LocusWaypoint(content, data)
+        assert bytes(wp) == data, "serializing a waypoint reproduces its stored bytes"
+
+        wp["height"] = 12
+        assert bytes(wp) != data
+        assert locus.LocusWaypoint(content, bytes(wp))["height"] == 12, "modified waypoint round-trips"
+
+
+def test_locus_parser_degenerate_sectors():
+    # Erased flash reads as 0xff, unwritten or zeroed flash as 0x00.
+    # Neither holds trackpoints, and neither is an error.
+    assert len(locus.Locus(b"\xff" * 0x1000)) == 0, "blank sector holds no trackpoints"
+    assert len(locus.Locus(b"\x00" * 0x1000)) == 0, "zeroed sector holds no trackpoints"
+    assert len(locus.Locus(SAMPLE_DAT + b"\x00" * 0x1000)) == 124, "zeroed sector after data is ignored"
+    assert len(locus.Locus(b"")) == 0, "no data, no trackpoints"
+
+    with pytest.raises(locus.LocusError):
+        locus.Locus(b"\x00" * 8)  # too short for a sector header
 
 
 def test_locus_parser():

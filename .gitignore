@@ -3,9 +3,14 @@ dumps
 doc
 .idea
 *.egg-info
+build
+dist
 venv
 Pipfile
 Pipfile.lock
 .coverage
 htmlcov
 .DS_Store
+.vscode
+*.bin
+TODO.md

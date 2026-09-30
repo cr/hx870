@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+from functools import reduce
 import pytest
 
 from hxtool.protocol import Message, ProtocolError
@@ -93,6 +94,15 @@ def test_broken_cmd_message_parsing():
     with pytest.raises(ProtocolError):
         Message(parse="FOOBAR")  # Invalid message
 
+    with pytest.raises(ProtocolError):
+        Message(parse="$GPGLL,5441.57,N")  # NMEA sentence without checksum separator
+
+    with pytest.raises(ProtocolError):
+        Message(parse="$PMTK001*36*36")  # NMEA sentence with two checksum separators
+
+    with pytest.raises(ProtocolError):
+        Message(parse=b"\xff\xfe#CMDOK\r\n")  # Line noise
+
     # TODO: test unary type with args
 
 
@@ -177,6 +187,15 @@ def test_nmea_sentence_builder():
     assert m.validate()
     assert m == Message(parse="$PMTK001,183,3*3A")
     assert str(m) == "$PMTK001,183,3*3A\r\n"
+
+
+def test_checksum_covers_every_byte():
+    # The checksum is the plain XOR over the covered bytes, no character is exempt
+    def xor(data: bytes) -> str:
+        return "%02X" % reduce(lambda x, y: x ^ y, data)
+
+    assert Message("#CEPWR", ["0100", "02", "21!A"]).checksum == xor(b"#CEPWR\t0100\t02\t21!A\t")
+    assert Message("$PMTK", ["011", "Hello!"]).checksum == xor(b"PMTK011,Hello!")
 
 
 def test_nmea_lowercase_edge_case():

@@ -5,17 +5,15 @@ from enum import Enum, IntFlag
 from struct import pack, unpack, error as StructError
 from functools import reduce
 
+from .protocol import InternalError
+
 
 class LocusError(Exception):
     pass
 
 
-class InternalError(Exception):
-    pass
-
-
 def checksum(data: bytes) -> int:
-    return reduce(lambda x, y: x ^ y, data)
+    return reduce(lambda x, y: x ^ y, data, 0)
 
 
 class LocusContent(IntFlag):
@@ -128,7 +126,7 @@ class LocusWaypoint(object):
         self._size = content["size"]
         self._format = content["format"]
         self._attributes = content["attributes"]
-        self._labels = content["attributes"]
+        self._labels = content["labels"]
         self._d = {}
         if len(data) != content["size"] + 1:  # plus one checksum byte
             raise LocusError("Too much waypoint data")
@@ -148,7 +146,7 @@ class LocusWaypoint(object):
         values = []
         for attr in self._attributes:
             values.append(self._d[attr])
-        packed = pack(self._format, values)
+        packed = pack(self._format, *values)
         packed += bytes([checksum(packed)])
         return packed
 
@@ -173,6 +171,8 @@ class LocusLog(object):
         content = locus_content_descriptor(header.LogContent)
         self._waypoints = []
         self._size = None
+        if content["size"] == 0:
+            return  # A sector without any content fields holds no waypoints
         for offset in range(0, len(data), content["size"] + 1):  # plus checksum byte
             start = offset
             end = offset + content["size"] + 1  # plus checksum byte

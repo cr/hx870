@@ -31,6 +31,16 @@ class IdCommand(CliCommand):
                             help="reset MMSI and ATIS programming",
                             action="store_true")
 
+        parser.add_argument("--mmsi-counter",
+                            help="write the MMSI update counter (left alone otherwise)",
+                            type=int,
+                            action="store")
+
+        parser.add_argument("--atis-counter",
+                            help="write the ATIS update counter (left alone otherwise)",
+                            type=int,
+                            action="store")
+
     def run(self):
         hx = hxtool.get(self.args)
         if hx is None:
@@ -40,38 +50,47 @@ class IdCommand(CliCommand):
             logger.critical("Handset not in CP mode (MENU + ON)")
             return 11
 
-        if self.args.atis is None and self.args.mmsi is None and not self.args.reset:
-            mmsi, mmsi_status = hx.config.read_mmsi()
-            atis, atis_status = hx.config.read_atis()
-            print(f"MMSI: {mmsi} [{mmsi_status}]")
-            print(f"ATIS: {atis} [{atis_status}]")
+        args = self.args
+        if args.atis is None and args.mmsi is None and not args.reset \
+                and args.mmsi_counter is None and args.atis_counter is None:
+            mmsi, mmsi_counter = hx.config.read_mmsi()
+            atis, atis_counter = hx.config.read_atis()
+            print(f"MMSI: {mmsi} [counter {mmsi_counter}]")
+            print(f"ATIS: {atis} [counter {atis_counter}]")
             return 0
 
-        if self.args.reset:
+        if args.reset:
             try:
                 logger.info("Resetting MMSI")
-                hx.config.write_mmsi()
+                hx.config.write_mmsi(counter=args.mmsi_counter)
                 logger.info("Resetting ATIS")
-                hx.config.write_atis()
+                hx.config.write_atis(counter=args.atis_counter)
             except ProtocolError as e:
                 logger.error(e)
                 return 12
 
-        if self.args.atis is not None:
+        if args.atis is not None or (args.atis_counter is not None and not args.reset):
             try:
-                logger.info(f"New ATIS `{self.args.atis}`")
-                hx.config.write_atis(self.args.atis)
+                atis = args.atis if args.atis is not None else programmed(hx.config.read_atis()[0])
+                logger.info(f"New ATIS `{atis}`" if args.atis is not None else f"New ATIS counter {args.atis_counter}")
+                hx.config.write_atis(atis, counter=args.atis_counter)
             except ProtocolError as e:
                 logger.error(e)
                 return 13
 
-        if self.args.mmsi is not None:
+        if args.mmsi is not None or (args.mmsi_counter is not None and not args.reset):
             try:
-                logger.info(f"New MMSI `{self.args.mmsi}`")
-                hx.config.write_mmsi(self.args.mmsi)
+                mmsi = args.mmsi if args.mmsi is not None else programmed(hx.config.read_mmsi()[0])
+                logger.info(f"New MMSI `{mmsi}`" if args.mmsi is not None else f"New MMSI counter {args.mmsi_counter}")
+                hx.config.write_mmsi(mmsi, counter=args.mmsi_counter)
             except ProtocolError as e:
                 logger.error(e)
                 return 14
 
         logger.info("Operation successful")
         return 0
+
+
+def programmed(code: str):
+    """The code as read from the device, or None if it is the factory placeholder"""
+    return None if code.strip("F") == "" else code
