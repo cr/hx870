@@ -70,10 +70,10 @@ class Message(object):
             return None
         elif self.type.startswith("#"):
             check = ("\t".join([self.type] + self.args) + "\t").encode("ascii")
-            return "%02X" % reduce(lambda x, y: x ^ y, filter(lambda x: x != "!", check))
+            return "%02X" % reduce(lambda x, y: x ^ y, check)
         elif self.type.startswith("$"):
             check = (self.type[1:] + ",".join(self.args)).encode("ascii")
-            return "%02X" % reduce(lambda x, y: x ^ y, filter(lambda x: x != "!", check))
+            return "%02X" % reduce(lambda x, y: x ^ y, check)
         else:
             return None
 
