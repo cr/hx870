@@ -8,6 +8,7 @@ from . import gpslog
 from . import id
 from . import info
 from . import nmea
+from . import poke
 
 __all__ = [
     "run",
@@ -17,5 +18,6 @@ __all__ = [
     "gpslog",
     "id",
     "info",
-    "nmea"
+    "nmea",
+    "poke",
 ]
