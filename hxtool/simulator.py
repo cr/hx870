@@ -190,6 +190,9 @@ class HXSimulator(Thread):
 
     def __reply(self, message_type, args=None):
         fault = self.faults.get(message_type)
+        if fault == "drop":
+            # The reply never makes it to the host
+            return
         if message_type == "#CEPDT" and fault in ("address", "length", "truncate"):
             # Replies that are well-formed, but do not match the request
             offset, length, data = args

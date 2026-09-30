@@ -10,6 +10,7 @@ import coloredlogs
 from importlib.metadata import version
 
 import hxtool.cli
+from hxtool.protocol import ProtocolError
 from hxtool.simulator import HXSimulator
 
 coloredlogs.DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
@@ -86,6 +87,14 @@ def main(main_args=None):
         stdout.flush()
         logger.critical("User abort")
         result = 5
+
+    except ProtocolError as e:
+        logger.critical(f"Protocol error ({e})")
+        result = 10
+
+    except TimeoutError as e:
+        logger.critical(f"Device timeout ({e})")
+        result = 10
 
     except OSError as e:
         logger.critical(f"Connection lost ({e})")

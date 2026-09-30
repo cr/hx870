@@ -30,7 +30,10 @@ class Message(object):
 
         if parse is not None:
             if type(parse) is bytes:
-                parse = parse.decode("ascii")
+                try:
+                    parse = parse.decode("ascii")
+                except UnicodeDecodeError as e:
+                    raise ProtocolError(f"Invalid message `{parse}`") from e
             if parse.startswith("#"):
                 # CP mode command message
                 parsed = parse.rstrip("\r\n").split("\t")
@@ -42,6 +45,8 @@ class Message(object):
             elif parse.startswith("$"):
                 # NMEA sentence
                 parsed = parse.rstrip("\r\n")
+                if parsed.count("*") != 1:
+                    raise ProtocolError(f"Invalid message `{parse}`")
                 self.type = parsed[:5]
                 args, self.checksum_recv = parsed[5:].split("*")
                 self.args = args.split(",")

@@ -93,6 +93,15 @@ def test_broken_cmd_message_parsing():
     with pytest.raises(ProtocolError):
         Message(parse="FOOBAR")  # Invalid message
 
+    with pytest.raises(ProtocolError):
+        Message(parse="$GPGLL,5441.57,N")  # NMEA sentence without checksum separator
+
+    with pytest.raises(ProtocolError):
+        Message(parse="$PMTK001*36*36")  # NMEA sentence with two checksum separators
+
+    with pytest.raises(ProtocolError):
+        Message(parse=b"\xff\xfe#CMDOK\r\n")  # Line noise
+
     # TODO: test unary type with args
 
 

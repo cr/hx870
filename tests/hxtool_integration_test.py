@@ -90,6 +90,47 @@ def test_hxtool_info_unknown_region(capsys, kill_sims, monkeypatch):
     assert "Region:\t [49]" in capsys.readouterr().out
 
 
+@pytest.fixture(name="sim_faults")
+def fixture_simulator_faults(monkeypatch):
+    # Faults put into this dict apply to all simulators started afterwards
+    faults = {}
+    sim_start = HXSimulator.start
+
+    def start_with_faults(self):
+        self.faults.update(faults)
+        sim_start(self)
+
+    monkeypatch.setattr(HXSimulator, "start", start_with_faults)
+    yield faults
+
+
+@pytest.mark.parametrize("command, reply_type", [
+    (["info"], "#CEPDT"),
+    (["id"], "#CEPDT"),
+    (["gpslog"], "$PMTK"),
+])
+def test_hxtool_reports_protocol_errors(capsys, kill_sims, sim_faults, command, reply_type):
+    del kill_sims
+    sim_faults[reply_type] = "checksum"
+
+    ret = main(["--simulator", "-t", "0"] + command)  # must not raise
+    assert ret != 0, "Protocol error makes the command fail"
+    err = capsys.readouterr().err
+    assert "Protocol error" in err
+    assert "Checksum mismatch" in err
+
+
+def test_hxtool_reports_timeouts(capsys, kill_sims, sim_faults):
+    del kill_sims
+    sim_faults["#CVRDQ"] = "drop"
+
+    ret = main(["--simulator", "-t", "0", "info"])
+    assert ret != 0, "Timeout makes the command fail"
+    err = capsys.readouterr().err
+    assert "timeout" in err
+    assert "Connection lost" not in err, "A silent device is not a lost connection"
+
+
 def test_hxtool_id(capsys, kill_sims):
     del kill_sims
 
