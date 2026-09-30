@@ -3,6 +3,8 @@ dumps
 doc
 .idea
 *.egg-info
+build
+dist
 venv
 Pipfile
 Pipfile.lock
@@ -10,3 +12,4 @@ Pipfile.lock
 htmlcov
 .DS_Store
 .vscode
+*.bin
