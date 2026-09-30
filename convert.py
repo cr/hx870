@@ -43,7 +43,7 @@ except FileNotFoundError:
 
 if proc.returncode != 0:
     sys.stderr.write("ERROR: `tshark` command failed:\n")
-    sys.stderr.write(err)
+    sys.stderr.write(err.decode("utf-8", errors="replace"))
     sys.exit(8)
 
 protocol = []
