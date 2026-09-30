@@ -13,7 +13,7 @@ class LocusError(Exception):
 
 
 def checksum(data: bytes) -> int:
-    return reduce(lambda x, y: x ^ y, data)
+    return reduce(lambda x, y: x ^ y, data, 0)
 
 
 class LocusContent(IntFlag):
@@ -171,6 +171,8 @@ class LocusLog(object):
         content = locus_content_descriptor(header.LogContent)
         self._waypoints = []
         self._size = None
+        if content["size"] == 0:
+            return  # A sector without any content fields holds no waypoints
         for offset in range(0, len(data), content["size"] + 1):  # plus checksum byte
             start = offset
             end = offset + content["size"] + 1  # plus checksum byte

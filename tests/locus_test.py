@@ -198,6 +198,18 @@ def test_waypoint_serializer():
         assert locus.LocusWaypoint(content, bytes(wp))["height"] == 12, "modified waypoint round-trips"
 
 
+def test_locus_parser_degenerate_sectors():
+    # Erased flash reads as 0xff, unwritten or zeroed flash as 0x00.
+    # Neither holds trackpoints, and neither is an error.
+    assert len(locus.Locus(b"\xff" * 0x1000)) == 0, "blank sector holds no trackpoints"
+    assert len(locus.Locus(b"\x00" * 0x1000)) == 0, "zeroed sector holds no trackpoints"
+    assert len(locus.Locus(SAMPLE_DAT + b"\x00" * 0x1000)) == 124, "zeroed sector after data is ignored"
+    assert len(locus.Locus(b"")) == 0, "no data, no trackpoints"
+
+    with pytest.raises(locus.LocusError):
+        locus.Locus(b"\x00" * 8)  # too short for a sector header
+
+
 def test_locus_parser():
     loc = locus.Locus(SAMPLE_DAT, verify=True)
     assert len(loc) == 124
