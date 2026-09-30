@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 
+import logging
 import pytest
+import subprocess
+import sys
 
 from hxtool.main import main
 from hxtool.protocol import Message
@@ -13,6 +16,21 @@ def kill_simulator_threads_fixture():
     yield None
     HXSimulator.stop_instances()
     HXSimulator.join_instances()
+
+
+def test_import_is_quiet():
+    # Importing the package must not configure logging; that is the CLI's job
+    code = "import logging, hxtool; print(logging.getLogger().handlers)"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "[]"
+
+
+def test_hxtool_configures_logging(capsys, kill_sims):
+    del kill_sims
+    assert main(["--simulator", "-t", "0", "info"]) == 0
+    assert " INFO Device on " in capsys.readouterr().err, "the CLI logs to stderr"
+    assert logging.getLogger().handlers, "the CLI installed a handler"
 
 
 def test_hxtool_devices(capsys, kill_sims):

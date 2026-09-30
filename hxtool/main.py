@@ -13,8 +13,6 @@ import hxtool.cli
 from hxtool.protocol import ProtocolError
 from hxtool.simulator import HXSimulator
 
-coloredlogs.DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
-coloredlogs.install(level="INFO")
 logger = getLogger(__name__)
 
 
@@ -73,9 +71,11 @@ def main(main_args=None):
 
     args = get_args(main_args)
 
+    # Logging is configured here and not at import, so that the package stays quiet as a library
     if args.debug:
-        coloredlogs.DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
-        coloredlogs.install(level="DEBUG")
+        coloredlogs.install(level="DEBUG", fmt="%(asctime)s %(levelname)s %(name)s %(message)s")
+    else:
+        coloredlogs.install(level="INFO", fmt="%(asctime)s %(levelname)s %(message)s")
 
     logger.debug("Command arguments: %s" % args)
 
