@@ -338,7 +338,17 @@ class GenericHXProtocol(object):
         if radio_status != "00":
             raise TimeoutError("Device not ready")
 
+    # The address and length fields of config memory transfers are two and one byte wide
+    MAX_TRANSFER = 0xff
+
+    def _check_transfer(self, offset, length):
+        if not 0 <= offset <= 0xffff:
+            raise ProtocolError(f"Config memory offset 0x{offset:x} out of range")
+        if not 1 <= length <= self.MAX_TRANSFER:
+            raise ProtocolError(f"Config memory transfer length {length} out of range (1-{self.MAX_TRANSFER})")
+
     def read_config_memory(self, offset, length):
+        self._check_transfer(offset, length)
         self.wait_for_ready()
         self.send("#CEPRD", ["%04X" % offset, "%02X" % length])
         r = self.receive()  # expect #CMDOK
@@ -358,6 +368,7 @@ class GenericHXProtocol(object):
         return data
 
     def write_config_memory(self, offset, data):
+        self._check_transfer(offset, len(data))
         self.wait_for_ready()
         data_string = hexlify(data).decode("ascii").upper()
         self.send("#CEPWR", ["%04X" % offset, "%02X" % len(data), data_string])

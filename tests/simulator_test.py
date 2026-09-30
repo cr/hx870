@@ -160,17 +160,27 @@ def test_cp_simulator(cp_sim, kill_sims):
     assert s.read(1) == b"@", "Simulator still signals CP mode"
 
 
-@pytest.mark.skip
 def test_cp_config_rw(cp_sim, kill_sims):
     del kill_sims
 
     p = GenericHXProtocol(cp_sim.tty)
     p.cmd_mode()
 
-    random_bytes = bytearray(getrandbits(8) for _ in range(0x110))
+    random_bytes = bytes(getrandbits(8) for _ in range(0xff))
     p.write_config_memory(0x1000, random_bytes)
-    m = p.read_config_memory(0x1000, len(random_bytes))
-    assert m == random_bytes
+    assert p.read_config_memory(0x1000, len(random_bytes)) == random_bytes, "largest transfer round-trips"
+    assert p.read_config_memory(0x1000, 1) == random_bytes[:1], "smallest transfer"
+
+    # The length field is one byte, so larger transfers cannot be expressed on the wire
+    for length in 0x100, 0x110:
+        with pytest.raises(ProtocolError, match="length"):
+            p.write_config_memory(0x2000, bytes(length))
+        with pytest.raises(ProtocolError, match="length"):
+            p.read_config_memory(0x2000, length)
+    with pytest.raises(ProtocolError, match="length"):
+        p.write_config_memory(0x2000, b"")
+    assert cp_sim.c[0x2000:0x2110] == b"\xff" * 0x110, "rejected transfers never reach the device"
+    assert p.read_config_memory(0x1000, 4) == random_bytes[:4], "connection is still in sync"
 
 
 def test_cp_checksum_verification(cp_sim, kill_sims):
