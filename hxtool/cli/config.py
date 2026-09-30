@@ -10,7 +10,7 @@ from ..protocol import ProtocolError
 logger = getLogger(__name__)
 
 
-class InfoCommand(CliCommand):
+class ConfigCommand(CliCommand):
 
     name = "config"
     help = "read and write handset configuration"

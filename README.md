@@ -49,7 +49,7 @@ It is still incomplete and currently only documented in form of a
 If you can C and figure out their custom lingo for defining bitfields, you'll have
 no trouble reading it.
 
-## Experimantal support for GPS log
+## Experimental support for GPS log
 
 GPS logs can now be exported and erased. Supported output formats are GPX, JSON, and raw log bytes.
 `hxtool gpslog` should dump some log content to screen if radio is in programming mode.

@@ -237,7 +237,7 @@ class HX890(HX870):
 
 class HX891(HX890):
     """
-    Device object for Standard Horizon HX890 maritime radios
+    Device object for Standard Horizon HX891BT maritime radios
     """
     handle = "HX891"
     brand = "Standard Horizon"
