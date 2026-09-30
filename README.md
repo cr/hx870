@@ -29,11 +29,9 @@ functionality is not exposed on the command line frontend, yet.
 
 ## Installation
 
-**This software does not work with Python 2.7!** It produces just a cryptic error message.
-
 The code is hardly documented and largely user-unfriendly and I am feeling
 slightly awful about it. However, you may install the command line tool into your
-(preferably virtual) *Python 3.6+* environment via
+(preferably virtual) *Python 3.8+* environment via
 `pip install git+https://github.com/cr/hx870`. Then see `hxtool --help` for usage
 information.
 
@@ -209,6 +207,7 @@ After a full reboot, those values are replaced by all FF.
 
 ## Testing notes
 
+ - `pip install -e '.[dev]'` - installing the development dependencies
  - `pytest -v` - running the test suite
  - `pytest --cov=hxtool --cov-report=term` - running test coverage
 

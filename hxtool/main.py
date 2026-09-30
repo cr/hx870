@@ -66,7 +66,7 @@ def at_exit():
     logger.debug("Backround threads finished")
 
 
-# This is the entry point used in setup.py
+# This is the entry point used in pyproject.toml
 def main(main_args=None):
     global logger
 
