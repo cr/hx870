@@ -89,10 +89,19 @@ def test_hx870_mmsi(sim_870_config):
     assert mmsi == "FFFFFFFFF", "MMSI reset"
     assert status == "00", "MMSI reset save counter"
 
-    sim_870_config.write_mmsi(mmsi="1112223330")
+    sim_870_config.write_mmsi(mmsi="111222333")
     mmsi, status = sim_870_config.read_mmsi()
-    assert mmsi == "111222333", "10th digit is accepted but dropped"
+    assert mmsi == "111222333", "MMSI write/read with default save counter"
     assert status not in ["00", "FF"], "save counter is set automatically"
+    raw = sim_870_config.p.read_config_memory(sim_870_config.MMSI_OFFSET, 5)
+    assert raw == unhexlify("1112223330"), "MMSI is stored with a zero as 10th digit"
+
+    # The 10th digit is protocol padding and not for the caller to provide
+    with pytest.raises(protocol.ProtocolError):
+        sim_870_config.write_mmsi(mmsi="1112223330")
+    with pytest.raises(protocol.ProtocolError):
+        sim_870_config.write_mmsi(mmsi="1112223339")
+    assert sim_870_config.read_mmsi()[0] == "111222333", "rejected MMSI is not written"
 
     with pytest.raises(protocol.ProtocolError):
         sim_870_config.write_mmsi(mmsi="12345678")  # too short

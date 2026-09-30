@@ -106,12 +106,12 @@ class GenericHXConfig(object):
         else:
             if not (mmsi.isascii() and mmsi.isdecimal()):
                 raise ProtocolError("Invalid MMSI format")
+            if len(mmsi) != 9:
+                raise ProtocolError("Invalid MMSI length")
+            # DSC addresses are coded with ten digits, the last one always being zero
+            mmsi += "0"
             if status is None:
                 status = "02"
-        if len(mmsi) == 9:
-            mmsi += "0"
-        if len(mmsi) != 10:
-            raise ProtocolError("Invalid MMSI length")
         if status.upper() not in ["00", "01", "02", "FF"]:
             raise ProtocolError("Invalid MMSI status")
         data = unhexlify(mmsi + status)
