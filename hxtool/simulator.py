@@ -10,6 +10,7 @@ from time import time
 
 from .protocol import Message
 from .config import GenericHXConfig
+from .locus import Locus, LocusHeader
 
 logger = getLogger(__name__)
 
@@ -64,6 +65,8 @@ class HXSimulator(Thread):
         # Fault injection for tests. Maps a reply type to the fault applied
         # to every reply of that type, e.g. {"#CEPDT": "checksum"}.
         self.faults = {}
+        # Raw content of the GPS logger flash, a multiple of 4k sectors
+        self.gps_log = b""
 
     def run(self):
         if self.stop_running.is_set():
@@ -151,6 +154,8 @@ class HXSimulator(Thread):
                         if message.startswith(b"0"):
                             # The real HX870 doesn't react to the 0ACMD:002
                             logger.debug(f"CP simulator ignoring message {message}")
+                        elif message.startswith(b"$"):
+                            self.__process_gps_message(message)
                         else:
                             self.__process_cp_message(message)
                         message = b""
@@ -159,6 +164,9 @@ class HXSimulator(Thread):
                     message = b
                 elif b == b"#":
                     # Beginning of a #-style command
+                    message = b
+                elif b == b"$":
+                    # Beginning of a sentence for the GPS module
                     message = b
                 elif b == b"?":
                     # Reply with @ to ? to signal CP mode
@@ -186,7 +194,48 @@ class HXSimulator(Thread):
         if fault == "checksum":
             # Received checksum has precedence when the message is serialized
             msg.checksum_recv = "%02X" % (int(msg.checksum, 16) ^ 0xff)
-        write(self.master, bytes(msg))
+        # The pty is non-blocking and holds little data, so long replies
+        # need to wait for the host to catch up
+        data = bytes(msg)
+        while len(data) > 0 and not self.stop_running.is_set():
+            try:
+                data = data[write(self.master, data):]
+            except BlockingIOError:
+                self.stop_running.wait(self.loop_delay)
+
+    def __process_gps_message(self, msg):
+        logger.debug(f"CP simulator processing GPS message {msg}")
+        msg = Message(parse=msg)
+        if msg.type != "$PMTK" or not msg.validate():
+            return
+        command = msg.args[0]
+        if command == "000":
+            self.__reply("$PMTK", ["001", "0", "3"])
+        elif command == "605":
+            self.__reply("$PMTK", ["705", "AXN_2.31_3339_13101700", "5632", "PA6H", "1.0"])
+        elif command == "183":
+            pages = (len(self.gps_log) + 0xfff) // 0x1000
+            slots = len(Locus(self.gps_log))
+            if pages > 0:
+                header = LocusHeader(self.gps_log)
+                content, interval = header.LogContent, header.IntervalSetting
+            else:
+                content, interval = 127, 5
+            self.__reply("$PMTK", ["LOG", str(pages), "1", "b", str(content), str(interval), "0", "0", "1",
+                                   str(slots), str(100 * slots // 6432)])
+            self.__reply("$PMTK", ["001", "183", "3"])
+        elif command == "622":
+            # Dump the log as lines of up to 24 words of 4 bytes each
+            lines = [self.gps_log[i:i + 96] for i in range(0, len(self.gps_log), 96)]
+            self.__reply("$PMTK", ["LOX", "0", str(len(lines))])
+            for number, line in enumerate(lines):
+                words = [hexlify(line[i:i + 4]).decode("ascii").upper() for i in range(0, len(line), 4)]
+                self.__reply("$PMTK", ["LOX", "1", str(number)] + words)
+            self.__reply("$PMTK", ["LOX", "2"])
+            self.__reply("$PMTK", ["001", "622", "3"])
+        elif command == "184":
+            self.gps_log = b""
+            self.__reply("$PMTK", ["001", "184", "3"])
 
     def __process_cp_message(self, msg):
         logger.debug(f"CP simulator processing message {msg}")
