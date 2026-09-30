@@ -154,6 +154,36 @@ def test_hxtool_config_dump(tmpdir, kill_sims):
     assert len(config) == 1 << 15
 
 
+def test_hxtool_config_dump_failure_keeps_file(tmpdir, kill_sims, monkeypatch):
+    del kill_sims
+    dump_dir = tmpdir.mkdir("config_dump")
+    backup_file = dump_dir.join("backup.dat")
+    backup_file.write_binary(b"precious backup")
+    new_file = dump_dir.join("new.dat")
+
+    # Make every simulator send config data with a broken checksum
+    sim_start = HXSimulator.start
+
+    def start_with_fault(self):
+        self.faults["#CEPDT"] = "checksum"
+        sim_start(self)
+
+    monkeypatch.setattr(HXSimulator, "start", start_with_fault)
+
+    for conf_file in backup_file, new_file:
+        args = [
+            "--simulator",
+            "-t", "0",
+            "config",
+            "-d", str(conf_file)
+        ]
+        ret = main(args)
+        assert ret != 0, "hxtool config --dump fails when the read fails"
+
+    assert backup_file.read_binary() == b"precious backup", "Failed dump leaves existing file untouched"
+    assert not new_file.exists(), "Failed dump does not create a file"
+
+
 @pytest.mark.slow
 def test_hxtool_config_flash(tmpdir, kill_sims):
     del kill_sims

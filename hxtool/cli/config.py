@@ -45,15 +45,17 @@ class InfoCommand(CliCommand):
 
         if self.args.dump is not None:
             # TODO: warn on flash ID mismatch
-            with open(self.args.dump, "wb") as f:
-                logger.info("Reading config flash from handset")
-                try:
-                    data = hx.config.config_read(progress=True)
-                    logger.info(f"Writing config to `{self.args.dump}`")
+            logger.info("Reading config flash from handset")
+            try:
+                data = hx.config.config_read(progress=True)
+            except ProtocolError as e:
+                logger.error(e)
+                ret = 10
+            else:
+                # Only touch the file once the read is complete
+                logger.info(f"Writing config to `{self.args.dump}`")
+                with open(self.args.dump, "wb") as f:
                     f.write(data)
-                except ProtocolError as e:
-                    logger.error(e)
-                    ret = 10
 
         if self.args.flash is not None:
             # TODO: add --really safeguard on flash ID mismatch
