@@ -10,7 +10,7 @@ from typing import Iterable, List, Optional, Set, Tuple, Type
 from .config import HX870Config, HX890Config, HX891Config, GX1400Config
 from .nmea import HX870NMEAProtocol, HX890NMEAProtocol
 from .protocol import GenericHXProtocol, GX1400Protocol, MediaTekProtocol, ReadMagicProtocol
-from .simulator import HXSimulator
+from .simulator import HXSimulator, SimulatorError
 
 logger = getLogger(__name__)
 
@@ -42,8 +42,11 @@ def enumerate(force_device=None, force_model=None, add_simulator=False):
     devices = []
 
     if add_simulator:
-        for model in model_list:
-            devices += model.simulators()
+        try:
+            for model in model_list:
+                devices += model.simulators()
+        except SimulatorError as e:
+            logger.error(e)
 
     devices += enumerate_devices(model_list, force_device)
 

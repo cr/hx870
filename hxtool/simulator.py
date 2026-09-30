@@ -2,9 +2,7 @@
 
 from binascii import hexlify, unhexlify
 from logging import getLogger
-from os import ttyname, read, write, close, set_blocking, close
-# FIXME: Importing pty fails on Windows
-from pty import openpty
+from os import read, write, close
 from threading import Event, Thread
 from time import time
 
@@ -13,6 +11,10 @@ from .config import GenericHXConfig
 from .locus import Locus, LocusHeader
 
 logger = getLogger(__name__)
+
+
+class SimulatorError(Exception):
+    pass
 
 
 class HXSimulator(Thread):
@@ -37,6 +39,15 @@ class HXSimulator(Thread):
 
     def __init__(self, device_type: GenericHXConfig, mode: str, config: bytearray = None,
                  loop_delay: float = None, nmea_delay: float = 3.0):
+        # The simulator is built on pseudo terminals, which don't exist on
+        # all platforms (Windows). Importing them here keeps the module
+        # importable everywhere.
+        try:
+            from os import ttyname, set_blocking
+            from pty import openpty
+        except ImportError as e:
+            raise SimulatorError("Simulator is not supported on this platform") from e
+
         super().__init__()
         HXSimulator.register(self)
         self.id = HXSimulator.instances.index(self)
@@ -59,7 +70,6 @@ class HXSimulator(Thread):
         self.stop_running = Event()
         self.loop_delay = loop_delay or self.loop_delay_default
         self.nmea_delay = nmea_delay
-        # FIXME: This will fail on Windows (probably on import)
         set_blocking(self.master, False)
         self.ignore_cmdok = False
         # Fault injection for tests. Maps a reply type to the fault applied

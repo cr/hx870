@@ -3,11 +3,14 @@
 import pytest
 from random import getrandbits
 from serial import Serial
+import subprocess
+import sys
 from sys import platform
 from threading import enumerate
 from time import sleep
 
 from hxtool import config
+from hxtool import device
 from hxtool import simulator
 from hxtool.protocol import GenericHXProtocol, ProtocolError
 
@@ -214,3 +217,28 @@ def test_cp_read_reply_verification(cp_sim, kill_sims, fault):
     del cp_sim.faults["#CEPDT"]
     p.sync()
     assert p.read_config_memory(0x0100, 6) == b"AM057N", "Read recovers after fault"
+
+
+def test_import_without_pty():
+    # On platforms without pty support (Windows), hxtool must still import
+    code = "import sys; sys.modules['pty'] = None; import hxtool; print('imported')"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "imported" in result.stdout
+
+
+def test_simulator_without_pty(monkeypatch, caplog, kill_sims):
+    del kill_sims
+    monkeypatch.setitem(sys.modules, "pty", None)  # makes importing pty fail
+
+    instances_before = len(simulator.HXSimulator.instances)
+    with pytest.raises(simulator.SimulatorError, match="not supported"):
+        simulator.HXSimulator(config.HX870Config, mode="CP")
+    assert len(simulator.HXSimulator.instances) == instances_before, "Failed simulator is not registered"
+
+    # Asking for simulators is reported, but does not get in the way of real devices
+    monkeypatch.setattr(device, "enumerate_devices", lambda *args: [(device.HX870Sim, "real")])
+    monkeypatch.setattr(device.HX870Sim, "__init__", lambda self, tty: setattr(self, "tty", tty))
+    devices = device.enumerate(add_simulator=True)
+    assert [d.tty for d in devices] == ["real"]
+    assert "not supported" in caplog.text
