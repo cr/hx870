@@ -3,11 +3,13 @@
 import pytest
 
 import hxtool
-from hxtool.device import enumerate, GX1400, HX870, models, read_magic
+from hxtool.device import enumerate, GX1400, HX870, HX890, models, read_magic
+from hxtool.main import main
 from hxtool.protocol import GenericHXProtocol, ProtocolError
 from hxtool.simulator import HXSimulator
 import serial
 from sys import platform
+from time import sleep
 
 
 def comport(tty, meta):
@@ -74,13 +76,17 @@ def test_read_magic(monkeypatch_read_magic):
     assert read_magic("/dev/busy") == 0, "ignores device that raises an OSError"
 
 
-def test_enumerate_devices(monkeypatch):
+def test_enumerate_devices(monkeypatch, caplog):
 
     def mock_comports(links=None):
         return [comport(tty, devices[tty]) for tty in devices.keys()]
 
     def mock_read_magic(tty, baudrates=None):
-        return devices[tty]["magic"]
+        probed.append(tty)
+        return devices[tty]["magic"] if tty in devices else unlisted.get(tty, 0)
+
+    probed = []
+    unlisted = {"/dev/pty7": 890}  # ports the system does not list
 
     monkeypatch.setattr(serial.tools.list_ports, "comports", mock_comports)
     monkeypatch.setattr(hxtool.device, "read_magic", mock_read_magic)
@@ -114,6 +120,21 @@ def test_enumerate_devices(monkeypatch):
     ], "force a wrong model class"  # both force_model and force_device
 
     assert not enumerate_devices(models.values(), "blah"), "invalid force_device"
+    assert "Invalid device selector blah" in caplog.text
+
+    # Unlisted ports are taken literally
+
+    probed.clear()
+    assert enumerate_devices(models.values(), "/dev/pty7") == [
+        ("HX890", "/dev/pty7"),
+    ], "unlisted force_device detected by config magic"
+    assert probed == ["/dev/pty7"], "only the given port is probed"
+
+    probed.clear()
+    assert enumerate_devices([GX1400], "/dev/pty7") == [
+        ("GX1400", "/dev/pty7"),
+    ], "unlisted force_device with force_model"
+    assert probed == [], "both forced skips probing"
 
     # Detection by config magic
 
@@ -171,3 +192,42 @@ def test_enumerate_force_both(kill_sims):
     assert len(devices) == 1
     assert type(devices[0]).__name__ == "HX891Sim"
     assert devices[0].cp_mode
+
+
+@pytest.mark.parametrize("model", [HX870, HX890, GX1400])
+def test_enumerate_unlisted_device(kill_sims, monkeypatch, model):
+    # The simulator's pty is a port that the system does not list
+    sim = HXSimulator(model.config_model, mode="CP")
+    sim.c[0:2] = model.config_model.CONFIG_MAGIC.to_bytes(2, "big")
+    sim.start()
+
+    devices = enumerate(force_device=sim.tty, force_model=model.handle)
+    assert len(devices) == 1
+    assert type(devices[0]) is model
+    assert devices[0].tty == sim.tty
+    assert devices[0].cp_mode
+
+    # The simulator reads its input far slower than a real device. Give it
+    # time to consume the tail of the probe before the port is opened again,
+    # because opening flushes whatever the simulator has not read by then.
+    def slow_read_magic(*args):
+        magic = read_magic(*args)
+        sleep(0.2)
+        return magic
+
+    monkeypatch.setattr(hxtool.device, "read_magic", slow_read_magic)
+
+    devices = enumerate(force_device=sim.tty)
+    assert len(devices) == 1
+    assert type(devices[0]) is model, "model detected by config magic"
+    assert devices[0].cp_mode
+
+
+def test_hxtool_unlisted_device(capsys, kill_sims):
+    sim = HXSimulator(HX870.config_model, mode="CP")
+    sim.start()
+
+    assert main(["--tty", sim.tty, "--model", "HX870", "info"]) == 0
+    outerr = capsys.readouterr()
+    assert f"Serial device:\t{sim.tty}" in outerr.out
+    assert "23.42" in outerr.out

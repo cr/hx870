@@ -4,6 +4,7 @@ from logging import getLogger
 import os
 import re
 from serial.tools import list_ports
+from serial.tools.list_ports_common import ListPortInfo
 import sys
 from typing import Iterable, List, Optional, Set, Tuple, Type
 
@@ -76,12 +77,15 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
             if force_device == port.device:
                 ports = [port]  # Limit grep result to exact match if there is one
 
+        # A selector that matches none of the ports the system lists is taken
+        # literally. This allows for ptys, symlinks, and other virtual ports.
+        if not ports:
+            logger.debug(f"Device selector {force_device} matches no listed port, using it as port name")
+            ports = [ListPortInfo(force_device)]
+
         # With both force_model and force_device used, skip auto-detection entirely
         if len(models) == 1 and len(ports) == 1:
             return [(models[0], ports[0].device)]
-
-        if not ports:
-            logger.error(f"Invalid device selector {force_device}")
 
     # Auto-detect based on USB metadata (very fast)
 
@@ -123,6 +127,9 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
                 devices.append((model, port.device))
                 logger.debug(f"Detected `{model.__name__}` at `{port.device}` by config magic")
                 break  # Stop at first device to minimise probing delays
+
+    if force_device and not devices:
+        logger.error(f"Invalid device selector {force_device}")
 
     return devices
 
