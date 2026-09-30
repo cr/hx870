@@ -6,7 +6,6 @@ from random import getrandbits
 from serial import Serial
 import subprocess
 import sys
-from sys import platform
 from threading import enumerate
 from time import sleep
 
@@ -14,10 +13,6 @@ from hxtool import config
 from hxtool import device
 from hxtool import simulator
 from hxtool.protocol import GenericHXProtocol, ProtocolError
-
-# The simulator doesn't work on Windows, so skip test if running on Windows
-if platform.startswith("win"):
-    pytest.skip("Skipping simulator tests on Windows", allow_module_level=True)
 
 
 @pytest.fixture(name="cp_sim")
@@ -38,14 +33,6 @@ def fixture_nmea_simulator():
     s.join(timeout=1)
 
 
-@pytest.fixture(name="kill_sims")
-def kill_simulator_threads_fixture():
-    yield None
-    simulator.HXSimulator.stop_instances()
-    simulator.HXSimulator.join_instances()
-
-
-@pytest.mark.wip
 def test_simulator_instance(kill_sims):
     del kill_sims
 

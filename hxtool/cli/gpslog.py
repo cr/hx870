@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-from binascii import hexlify
 import datetime
 import gpxpy
 import gpxpy.gpx

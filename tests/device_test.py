@@ -9,7 +9,6 @@ from hxtool.main import main
 from hxtool.protocol import GenericHXProtocol, ProtocolError
 from hxtool.simulator import HXSimulator
 import serial
-from sys import platform
 from time import sleep
 
 
@@ -26,15 +25,6 @@ def enumerate_devices(*args):
 
 def identified_devices(*args):
     return [(c.model.__name__, c.tty, c.identified) for c in hxtool.device.enumerate_devices(*args)]
-
-
-@pytest.fixture(name="kill_sims")
-def kill_simulator_threads_fixture():
-    if platform.startswith("win"):
-        pytest.skip("Skipping simulator tests on Windows", allow_module_level=True)
-    yield None
-    HXSimulator.stop_instances()
-    HXSimulator.join_instances()
 
 
 @pytest.fixture(name="monkeypatch_read_magic")

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-# Extract data from pcap dumps with
-# tshark -r $PCAPFILE -2 -R "usb.device_address == 6 && usb.transfer_type == 3" -T fields -e usb.endpoint_address.direction -e usb.capdata
+# Extract data from USB pcap dumps of the vendor tool talking to a radio, with
+# tshark -r $PCAPFILE -2 -R "usb.device_address == 6 && usb.transfer_type == 3" \
+#     -T fields -e usb.endpoint_address.direction -e usb.capdata
 
 import binascii
 import os
@@ -47,10 +48,10 @@ if proc.returncode != 0:
     sys.exit(8)
 
 protocol = []
-for l in output.decode("utf-8").split("\n"):
-    if len(l) == 0:
+for line in output.decode("utf-8").split("\n"):
+    if len(line) == 0:
         continue
-    x = l.strip().split("\t")
+    x = line.strip().split("\t")
     s = binascii.unhexlify(x[2].replace(":", "")).decode("utf-8")
     protocol.append((x[0], x[1], s))
 
@@ -76,4 +77,3 @@ elif mode == "dump":
                 data = binascii.unhexlify(c[3])
                 sys.stdout.buffer.write(data)
                 prev_address = address
-

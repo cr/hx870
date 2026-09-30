@@ -4,22 +4,11 @@ import logging
 import pytest
 import subprocess
 import sys
-from sys import platform
 
 from hxtool.main import main
 from hxtool.protocol import Message
 from hxtool.device import HX870Sim
 from hxtool.simulator import HXSimulator
-
-
-@pytest.fixture(name="kill_sims")
-def kill_simulator_threads_fixture():
-    # The simulator doesn't work on Windows, so skip tests that need one
-    if platform.startswith("win"):
-        pytest.skip("Skipping simulator tests on Windows")
-    yield None
-    HXSimulator.stop_instances()
-    HXSimulator.join_instances()
 
 
 def test_import_is_quiet():

@@ -221,6 +221,12 @@ After factory reset, the following values are present at offset 0x0110 in config
 
 After a full reboot, those values are replaced by all FF.
 
+## Tools
+
+`tools/convert.py` turns a USB capture (pcap) of the vendor software talking to a radio
+into the protocol dialogue (`print`) or the memory image it transferred (`dump`). It
+needs Wireshark's `tshark`.
+
 ## Testing notes
 
  - `pip install -e '.[dev]'` - installing the development dependencies

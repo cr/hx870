@@ -3,17 +3,11 @@
 from json import load
 import pytest
 from struct import pack
-from sys import platform
 
 from hxtool import locus
 from hxtool.cli.gpslog import to_hm
 from hxtool.main import main
 from hxtool.simulator import HXSimulator
-
-# The simulator doesn't work on Windows, so skip test if running on Windows
-if platform.startswith("win"):
-    pytest.skip("Skipping simulator tests on Windows", allow_module_level=True)
-
 
 LOG_CONTENT = 0x7f  # UTC, fix type, latitude, longitude, height, speed, heading
 LOG_CONTENT_NSAT = LOG_CONTENT | 1 << 12  # plus number of satellites
@@ -44,13 +38,6 @@ SAMPLE_LOG = log_sector([
     (1700000010, -33.75, 151.125),
     (1700000015, -0.5, -0.25),
 ])
-
-
-@pytest.fixture(name="kill_sims")
-def kill_simulator_threads_fixture():
-    yield None
-    HXSimulator.stop_instances()
-    HXSimulator.join_instances()
 
 
 @pytest.fixture(name="sims_with_log")

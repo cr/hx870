@@ -2,15 +2,9 @@
 
 import logging
 import pytest
-from sys import platform
 
 from hxtool import config, protocol, simulator
 from hxtool.protocol import GenericHXProtocol, GX1400Protocol
-
-# The simulator doesn't work on Windows, so skip test if running on Windows
-if platform.startswith("win"):
-    pytest.skip("Skipping simulator tests on Windows", allow_module_level=True)
-
 
 MODELS = [config.HX870Config, config.HX890Config, config.GX1400Config]
 

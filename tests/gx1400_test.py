@@ -1,20 +1,14 @@
 # -*- coding: utf-8 -*-
 
 from binascii import unhexlify
-import os
 import logging
 import pytest
-from sys import platform
 
 from hxtool.config import GX1400Config
 from hxtool.device import GX1400
 from hxtool.main import main
 from hxtool.protocol import ProtocolError
 from hxtool.simulator import HXSimulator
-
-# The simulator may not work on Windows, so skip test if running on Windows
-if platform.startswith("win"):
-    pytest.skip("Skipping simulator tests on Windows", allow_module_level=True)
 
 
 @pytest.fixture(name="blank_sim")

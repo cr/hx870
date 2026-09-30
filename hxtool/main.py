@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import atexit
 from argparse import ArgumentParser
 from logging import getLogger
 from sys import exit, argv, stdout
@@ -57,7 +56,6 @@ def get_args(args=None):
     return parser.parse_args(args or argv[1:])
 
 
-# @atexit.register
 def at_exit():
     logger.debug("Waiting for backround threads")
     HXSimulator.stop_instances()
@@ -67,8 +65,6 @@ def at_exit():
 
 # This is the entry point used in pyproject.toml
 def main(main_args=None):
-    global logger
-
     args = get_args(main_args)
 
     # Logging is configured here and not at import, so that the package stays quiet as a library

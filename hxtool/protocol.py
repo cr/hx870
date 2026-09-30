@@ -380,13 +380,10 @@ class MediaTekProtocol(object):
         #   It might also stop responding completely, but behavior is highly unpredictable.
         # * If you set it to any other value, the module stops responding completely until you remove the battery.
         #
-        # self.send("$PMTK", ["251", "115200"])
-        # r = self.receive()
-        # if r.type != "$PMTK" or r.args != ["001", "225", "3"]:
-        #     raise ProtocolError(f"Unexpected response after setting output baudrate: {r}")
-        #
-        # Massive syncing before and after setting baudrate works most reliably, but it also fails intermittently,
-        # sometimes making the GPS module hang until reboot.
+        # Checking for the ACK ($PMTK001,225,3) after the request is not reliable either. Massive syncing before
+        # and after setting the baudrate works most reliably, but it also fails intermittently, sometimes making
+        # the GPS module hang until reboot. The vendor tool transfers at the high rate without trouble; how it
+        # gets there is not known yet (the USB captures in dumps/ may hold the answer).
 
         self.sync()
         self.p.send("$PMTK", ["251", str(rate)])
@@ -438,8 +435,7 @@ class MediaTekProtocol(object):
         self.sync()
 
         # The radio behaves so erratically that the best option for now is not setting the baudrate at all
-        # and sticking with the slow, but reliable, default 9600.
-        # self.set_baudrate(115200)
+        # (set_baudrate(115200)) and sticking with the slow, but reliable, default 9600.
 
         # ReadLog command to radio
         self.send("$PMTK", ["622", "1"])
@@ -480,24 +476,15 @@ class MediaTekProtocol(object):
 
         # Did we receive the log in order and completely?
         if received_line_numbers != list(range(number_of_lines)):
-            raise ProtocolError(f"Unexpected log dump sequence from device")
+            raise ProtocolError("Unexpected log dump sequence from device")
 
         # Radio acknowledges ReadLog command
         r = self.receive()
         if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "622", "3"]:
             raise ProtocolError(f"Unexpected ReadLog acknowledgement from device: {str(r).strip()}")
 
-        # If you don't switch back to 9600bd, the GPS module sometimes behaves strangely until reboot.
-        # Sometimes, switching back will make the module hang until reboot.
-        #
-        # self.mtk_sync()
-        # self.send("$PMTK", ["251", "9600"])
-        # try:
-        #     r = self.receive()  # may or may not ACK
-        # except TimeoutError:
-        #     continue
-        # self.mtk_sync()
-        # self.mtk_sync()
+        # After a transfer at high speed: if you don't switch back to 9600 baud, the GPS module sometimes
+        # behaves strangely until reboot. Sometimes, switching back will make the module hang until reboot.
 
         return raw_log_data
 

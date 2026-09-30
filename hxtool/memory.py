@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 
-from array import array
+"""
+Codecs for structures in config memory. The waypoint codec is complete; the
+channel decoding is unfinished reverse engineering of the HX870 layout and is
+kept as the record of what is known (see https://johannessen.github.io/hx870/).
+"""
+
 from binascii import hexlify, unhexlify
-import datetime
-from functools import reduce
 from logging import getLogger
 from re import match
 from struct import unpack
@@ -98,6 +101,7 @@ def _pack_position(position, hemispheres: str, max_degrees: int, degree_digits: 
     return f"{degrees:0{degree_digits}d}{minutes:06d}{hemisphere}"
 
 
+# Names and abbreviations a user might give for a region code (not used yet)
 region_map = {
     "INTERNATIONAL": 0,
     "CANADA": 0,

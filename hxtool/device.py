@@ -37,7 +37,6 @@ class Candidate(NamedTuple):
 
 def enumerate(force_device=None, force_model=None, add_simulator=False):
 
-    global models
     if force_model:
         try:
             model_list = [models[force_model.upper()]]
@@ -111,7 +110,6 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
     # Auto-detect based on config magic (can be slow, skip unless necessary)
 
     if not force_device:
-        global include_ports, exclude_ports
         if include_ports:
             ports = [p for p in ports if p.device in include_ports]
         else:

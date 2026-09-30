@@ -22,8 +22,8 @@ class GenericHXTTY(object):
         logger.debug(f"Connecting to {tty}")
         self.default_timeout = timeout
         self.s = Serial(tty, baudrate, timeout=timeout)
-        self.s.flushInput()
-        self.s.flushOutput()
+        self.s.reset_input_buffer()
+        self.s.reset_output_buffer()
 
     def write(self, data):
         logger.debug("OUT: %s" % repr(data))
@@ -57,9 +57,9 @@ class GenericHXTTY(object):
         if self.s.in_waiting > 0:
             message = f"{self.tty} flushing {self.s.in_waiting} bytes from input buffer"
             logger.debug(message) if expected else logger.warning(message)
-        return self.s.flushInput()
+        return self.s.reset_input_buffer()
 
     def flush_output(self):
         if self.s.out_waiting > 0:
             logger.warning(f"{self.tty} flushing {self.s.out_waiting} bytes from output buffer")
-        return self.s.flushOutput()
+        return self.s.reset_output_buffer()

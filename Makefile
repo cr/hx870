@@ -31,7 +31,7 @@ coverage: venv
 	$(BIN)/python -m coverage html
 
 lint: venv
-	$(BIN)/python -m pycodestyle hxtool tests
+	$(BIN)/python -m pycodestyle hxtool tests tools
 
 build: venv
 	$(BIN)/python -m pip install build
