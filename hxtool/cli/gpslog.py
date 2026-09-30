@@ -10,7 +10,7 @@ from os.path import abspath
 
 import hxtool
 from .base import CliCommand
-from hxtool.locus import Locus, LocusError
+from hxtool.locus import FixQuality, Locus, LocusError
 
 logger = getLogger(__name__)
 
@@ -104,6 +104,15 @@ class GpsLogCommand(CliCommand):
         return result
 
 
+# LOCUS fix quality to the GPX fix element, where GPX has a word for it
+GPX_FIX = {
+    FixQuality.INVALID.value: "none",
+    FixQuality.SPS.value: "3d",
+    FixQuality.DGPS.value: "dgps",
+    FixQuality.PPS.value: "pps",
+}
+
+
 def write_gpx(log_data: bytes, file_name: str) -> int:
     try:
         log = Locus(log_data)
@@ -121,21 +130,26 @@ def write_gpx(log_data: bytes, file_name: str) -> int:
     gpx_segment = gpxpy.gpx.GPXTrackSegment()
     gpx_track.segments.append(gpx_segment)
 
-    # Create points:
+    # Create points. GPX 1.0 has elements for everything the log records;
+    # 1.1 dropped speed and course in favour of vendor extensions (see #30).
     for point in log:
         p = gpxpy.gpx.GPXTrackPoint(
             time=utc_time(point["utc_time"]),
             latitude=point["latitude"],
             longitude=point["longitude"],
-            elevation=point["height"]
+            elevation=point["height"] if "height" in point else None,
+            speed=point["speed"] if "speed" in point else None,  # m/s, as the log records it
         )
-        # TODO: Use GPX 1.1 extensions for speed and heading, but which ones?
-        # {"nmea:speed": point["speed"] * 3.6 / 1.852}
-        # {"nmea:heading": point["heading"]}
+        if "heading" in point:
+            p.course = point["heading"]
+        if "fix_type" in point:
+            p.type_of_gpx_fix = GPX_FIX.get(point["fix_type"])
+        if "satellites" in point:
+            p.satellites = point["satellites"]
         gpx_segment.points.append(p)
 
     with open(file_name, "w") as f:
-        f.write(gpx.to_xml(version="1.1"))
+        f.write(gpx.to_xml(version="1.0"))
 
     return 0
 

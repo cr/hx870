@@ -16,14 +16,23 @@ if platform.startswith("win"):
 
 
 LOG_CONTENT = 0x7f  # UTC, fix type, latitude, longitude, height, speed, heading
+LOG_CONTENT_NSAT = LOG_CONTENT | 1 << 12  # plus number of satellites
 
 
-def log_sector(points) -> bytes:
-    header = pack("<HBBHHHHHB", 0, 1, 8, LOG_CONTENT, 0, 5, 0, 0, 0)
+def log_sector(points, content=LOG_CONTENT) -> bytes:
+    """points: (utc_time, latitude, longitude) or (utc_time, latitude, longitude, fix_type, satellites)"""
+    header = pack("<HBBHHHHHB", 1, 1, 0x0b, content, 0, 60, 0, 0, 0x43)
     header += bytes([locus.checksum(header)])
-    sector = header + b"\xff" * 0x30
-    for utc_time, latitude, longitude in points:
-        record = pack("<IBffhHH", utc_time, 1, latitude, longitude, 5, 3, 90)
+    used = bytearray(b"\xff" * 44)  # one cleared bit per used slot, most significant bit first
+    for i in range(len(points)):
+        used[i // 8] &= ~(0x80 >> (i % 8)) & 0xff
+    sector = header + used + bytes.fromhex("00fc8c1c")
+    for point in points:
+        utc_time, latitude, longitude = point[:3]
+        fix_type, satellites = point[3:] if len(point) > 3 else (1, 7)
+        record = pack("<IBffhHH", utc_time, fix_type, latitude, longitude, 5, 3, 90)
+        if content & 1 << 12:
+            record += pack("<B", satellites)
         sector += record + bytes([locus.checksum(record)])
     return sector.ljust(0x1000, b"\xff")
 
@@ -90,7 +99,13 @@ def test_gpslog_export_and_erase(tmpdir, capsys, monkeypatch, sims_with_log, kil
     assert raw_file.read_binary() == SAMPLE_LOG
     gpx = gpx_file.read_text("ascii")
     assert gpx.count("<trkpt ") == 4
+    assert 'version="1.0"' in gpx and 'xmlns="http://www.topografix.com/GPX/1/0"' in gpx, "GPX 1.0"
     assert "<time>2023-11-14T22:13:20Z</time>" in gpx, "GPX timestamps are marked as UTC"
+    assert gpx.count("<ele>5</ele>") == 4
+    assert gpx.count("<speed>3</speed>") == 4, "speed is exported"
+    assert gpx.count("<course>90</course>") == 4, "heading is exported"
+    assert gpx.count("<fix>3d</fix>") == 4, "GPS fix quality is exported"
+    assert "<sat>" not in gpx, "no satellite count in this log"
     with open(json_file) as f:
         trackpoints = load(f)["trackpoints"]
     assert len(trackpoints) == 4
@@ -131,3 +146,23 @@ def test_gpslog_gx1400(capsys, kill_sims):
 
     assert main(["--simulator", "-m", "GX1400", "gpslog"]) != 0
     assert "GPS log" in capsys.readouterr().err
+
+
+def test_gpx_export_fix_and_satellites(tmpdir):
+    from hxtool.cli.gpslog import write_gpx
+    log = log_sector([
+        (1700000000, 54.5, 12.25, 0, 0),  # no fix
+        (1700000005, 54.5, 12.25, 1, 6),  # GPS
+        (1700000010, 54.5, 12.25, 2, 9),  # differential GPS
+        (1700000015, 54.5, 12.25, 3, 12),  # precise positioning
+        (1700000020, 54.5, 12.25, 6, 4),  # dead reckoning: GPX has no word for it
+    ], content=LOG_CONTENT_NSAT)
+    gpx_file = tmpdir.join("log.gpx")
+    assert write_gpx(log, str(gpx_file)) == 0
+    gpx = gpx_file.read_text("ascii")
+    assert gpx.count("<trkpt ") == 5
+    for fix in ("none", "3d", "dgps", "pps"):
+        assert gpx.count(f"<fix>{fix}</fix>") == 1
+    assert gpx.count("<fix>") == 4, "unmappable fix types are left out"
+    for sat in (0, 6, 9, 12, 4):
+        assert f"<sat>{sat}</sat>" in gpx

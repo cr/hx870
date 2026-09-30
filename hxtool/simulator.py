@@ -235,7 +235,7 @@ class HXSimulator(Thread):
         if command == "000":
             self.__reply("$PMTK", ["001", "0", "3"])
         elif command == "605":
-            self.__reply("$PMTK", ["705", "AXN_2.31_3339_13101700", "5632", "PA6H", "1.0"])
+            self.__reply("$PMTK", ["705", "MT3333_AXN5.1.9_MODULE_STD_F0", "343F", "MC-G", "1.0"])
         elif command == "183":
             pages = (len(self.gps_log) + 0xfff) // 0x1000
             slots = len(Locus(self.gps_log))
