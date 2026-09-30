@@ -6,9 +6,9 @@ BIN    := $(VENV)/bin
 
 help:
 	@echo "make venv       create $(VENV)/ and install hxtool with dev dependencies"
-	@echo "make test       run the test suite (including pycodestyle checks)"
+	@echo "make test       run the test suite"
 	@echo "make coverage   run the test suite with coverage, HTML report in htmlcov/"
-	@echo "make lint       run the pycodestyle checks only"
+	@echo "make lint       run the ruff checks (style, unused names, dated syntax)"
 	@echo "make build      build sdist and wheel into dist/"
 	@echo "make clean      remove caches, coverage data and build output"
 	@echo "make distclean  clean, and remove $(VENV)/ as well"
@@ -31,7 +31,7 @@ coverage: venv
 	$(BIN)/python -m coverage html
 
 lint: venv
-	$(BIN)/python -m pycodestyle hxtool tests tools
+	$(BIN)/python -m ruff check hxtool tests tools
 
 build: venv
 	$(BIN)/python -m pip install build

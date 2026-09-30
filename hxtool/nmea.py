@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 from logging import getLogger
 
 from .protocol import GenericHXProtocol
@@ -7,7 +5,7 @@ from .protocol import GenericHXProtocol
 logger = getLogger(__name__)
 
 
-class GenericNMEAProtocol(object):
+class GenericNMEAProtocol:
     """
     A radio in NMEA mode. Nothing is implemented yet beyond holding the
     connection; the classes exist so that every model names its NMEA

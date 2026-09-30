@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import pytest
 import serial.tools.list_ports
 import sys

@@ -1,8 +1,4 @@
-# -*- coding: utf-8 -*-
-
-from binascii import hexlify, unhexlify
 from logging import getLogger
-from typing import Tuple
 
 from .memory import unpack_waypoint
 from .protocol import GenericHXProtocol, ProtocolError
@@ -25,7 +21,7 @@ def _counter_byte(counter, what: str) -> bytes:
     return bytes([counter])
 
 
-class GenericHXConfig(object):
+class GenericHXConfig:
     """
     Config memory of an HX style radio. Everything model specific is a class
     attribute; subclasses only override attributes, not methods.
@@ -151,7 +147,7 @@ class GenericHXConfig(object):
     def firmware_version(self) -> str:
         if self.FIRMWARE_VERSION_OFFSET is None:
             return self.p.get_firmware_version()
-        data = hexlify(self.p.read_config_memory(self.FIRMWARE_VERSION_OFFSET, 3)).decode()
+        data = self.p.read_config_memory(self.FIRMWARE_VERSION_OFFSET, 3).hex()
         return (data[1] if data.startswith("0") else data[0:2]) + "." + data[2:4]
 
     def variant(self):
@@ -177,7 +173,7 @@ class GenericHXConfig(object):
 
     def read_mmsi(self):
         data = self.p.read_config_memory(self.MMSI_OFFSET, 6)
-        mmsi = hexlify(data[0:5]).decode().upper()[0:9]
+        mmsi = data[0:5].hex().upper()[0:9]
         return mmsi, data[5]
 
     def write_mmsi(self, mmsi: str = None, counter: int = None):
@@ -198,11 +194,11 @@ class GenericHXConfig(object):
             code = mmsi + "0"
             if counter is None:
                 counter = self.read_mmsi()[1]
-        self.p.write_config_memory(self.MMSI_OFFSET, unhexlify(code) + _counter_byte(counter, "MMSI"))
+        self.p.write_config_memory(self.MMSI_OFFSET, bytes.fromhex(code) + _counter_byte(counter, "MMSI"))
 
     def read_atis(self):
         data = self.p.read_config_memory(self.ATIS_CODE_OFFSET, 6)
-        atis = hexlify(data[0:5]).decode().upper()
+        atis = data[0:5].hex().upper()
         return atis, data[5]
 
     def write_atis(self, atis: str = None, counter: int = None):
@@ -222,9 +218,9 @@ class GenericHXConfig(object):
             code = atis
             if counter is None:
                 counter = self.read_atis()[1]
-        self.p.write_config_memory(self.ATIS_CODE_OFFSET, unhexlify(code) + _counter_byte(counter, "ATIS"))
+        self.p.write_config_memory(self.ATIS_CODE_OFFSET, bytes.fromhex(code) + _counter_byte(counter, "ATIS"))
 
-    def read_atis_enabled(self) -> Tuple[bool, int]:
+    def read_atis_enabled(self) -> tuple[bool, int]:
         atis_config = ord(self.p.read_config_memory(self.ATIS_ENABLED_OFFSET, 1))
         atis_enabled = atis_config & 1 == 1
         return atis_enabled, atis_config
@@ -238,7 +234,7 @@ class GenericHXConfig(object):
             logger.warning("Unknown ATIS enabled value. Flashing anyway")
         return self.p.write_config_memory(self.ATIS_ENABLED_OFFSET, b)
 
-    def read_region(self) -> Tuple[str, int]:
+    def read_region(self) -> tuple[str, int]:
         region_code = ord(self.p.read_config_memory(self.REGION_CODE_OFFSET, 1))
         region = self.REGION_CODES.get(region_code, "")
         return region, region_code

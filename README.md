@@ -31,7 +31,7 @@ functionality is not exposed on the command line frontend, yet.
 
 The code is hardly documented and largely user-unfriendly and I am feeling
 slightly awful about it. However, you may install the command line tool into your
-(preferably virtual) *Python 3.8+* environment via
+(preferably virtual) *Python 3.10+* environment via
 `pip install git+https://github.com/cr/hx870`. Then see `hxtool --help` for usage
 information.
 

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 from functools import reduce
 import pytest
 
@@ -162,7 +160,7 @@ def test_message_checksums():
 
     # The checksum is the plain XOR over the covered bytes, no character is exempt
     def xor(data: bytes) -> str:
-        return "%02X" % reduce(lambda x, y: x ^ y, data)
+        return f"{reduce(lambda x, y: x ^ y, data):02X}"
 
     assert Message("#CEPWR", ["0100", "02", "21!A"]).checksum == xor(b"#CEPWR\t0100\t02\t21!A\t")
     assert Message("$PMTK", ["011", "Hello!"]).checksum == xor(b"PMTK011,Hello!")

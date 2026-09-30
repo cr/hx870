@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
-
 from logging import getLogger
 
 logger = getLogger(__name__)
 
 
-class CliCommand(object):
+class CliCommand:
     """
     Generic parent class for cli command implementations
     """
@@ -61,18 +59,18 @@ class CliCommand(object):
         pass
 
 
-def __subclasses_of(cls):
+def _subclasses_of(cls):
     sub_classes = cls.__subclasses__()
     sub_sub_classes = []
     for sub_cls in sub_classes:
-        sub_sub_classes += __subclasses_of(sub_cls)
+        sub_sub_classes += _subclasses_of(sub_cls)
     return sub_classes + sub_sub_classes
 
 
 def list_commands():
     """Return a list of all cli commands"""
     return dict([(command.name, command)
-                 for command in __subclasses_of(CliCommand)])
+                 for command in _subclasses_of(CliCommand)])
 
 
 def run(args) -> int:
@@ -84,7 +82,7 @@ def run(args) -> int:
     try:
         current_command = all_commands[args.command](args)
     except KeyError:
-        logger.critical("Unknown command `%s`" % args.command)
+        logger.critical(f"Unknown command `{args.command}`")
         return 5
 
     if not current_command.check_args(args):

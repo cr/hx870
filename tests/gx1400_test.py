@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-from binascii import unhexlify
 import pytest
 
 from hxtool.config import GX1400Config
@@ -23,11 +20,11 @@ def fixture_blank_simulator():
 @pytest.fixture(name="gx1400_sim")
 def fixture_gx1400_simulator():
     memory = bytearray(b"\xff" * 0x2000)
-    memory[0x001d:0x001f] = unhexlify("0099")  # firmware version
+    memory[0x001d:0x001f] = bytes.fromhex("0099")  # firmware version
     memory[0x0052] = 0x20  # ATIS disabled
-    memory[0x0060:0x0066] = unhexlify("972001400001")  # MMSI
-    memory[0x0066:0x006c] = unhexlify("997200140006")  # ATIS
-    memory[0x0096:0x0098] = unhexlify("0005")  # code clear counters
+    memory[0x0060:0x0066] = bytes.fromhex("972001400001")  # MMSI
+    memory[0x0066:0x006c] = bytes.fromhex("997200140006")  # ATIS
+    memory[0x0096:0x0098] = bytes.fromhex("0005")  # code clear counters
     memory[0x0098:0x009e] = "AM065N".encode("ascii")  # flash ID
     memory[0x009f] = 0x01  # region
     memory[0x00d0:0x00dd] = "GX1400GPS-SIM".encode("ascii")  # model variant

@@ -1,12 +1,9 @@
-# -*- coding: utf-8 -*-
-
 """
 Codecs for structures in config memory. The waypoint codec is complete; the
 channel decoding is unfinished reverse engineering of the HX870 layout and is
 kept as the record of what is known (see https://johannessen.github.io/hx870/).
 """
 
-from binascii import hexlify, unhexlify
 from logging import getLogger
 from re import match
 from struct import unpack
@@ -21,22 +18,22 @@ def unpack_waypoint(data):
     if wp_id == 255:
         return None
     wp_name = data[16:31].rstrip(b'\xff').decode("ascii")
-    wp_mmsi = hexlify(data[0:5]).decode()[0:9]
+    wp_mmsi = data[0:5].hex()[0:9]
     if wp_mmsi == "fffffffff":
         wp_mmsi = None
 
-    lat_str = hexlify(data[5:9])
+    lat_str = data[5:9].hex()
     lat_deg = int(lat_str[0:2])
     lat_min = int(lat_str[2:8]) / 10000.0
     lat_dir = chr(data[9])
 
-    lon_str = hexlify(data[10:15])
+    lon_str = data[10:15].hex()
     lon_deg = int(lon_str[0:4])
     lon_min = int(lon_str[4:10]) / 10000.0
     lon_dir = chr(data[15])
 
-    wp_latitude = "%d%s%07.4f" % (lat_deg, lat_dir, lat_min)
-    wp_longitude = "%d%s%07.4f" % (lon_deg, lon_dir, lon_min)
+    wp_latitude = f"{lat_deg:d}{lat_dir}{lat_min:07.4f}"
+    wp_longitude = f"{lon_deg:d}{lon_dir}{lon_min:07.4f}"
 
     return {
         "id": wp_id,
@@ -77,9 +74,9 @@ def pack_waypoint(wp):
     lat_hex = _pack_position(wp.get("latitude"), "NS", 90, 2, "latitude")
     lon_hex = _pack_position(wp.get("longitude"), "EW", 180, 3, "longitude")
 
-    wp_data = unhexlify(mmsi_hex)
-    wp_data += unhexlify(lat_hex[:-1]) + lat_hex[-1].encode("ascii")
-    wp_data += unhexlify("0" + lon_hex[:-1]) + lon_hex[-1].encode("ascii")
+    wp_data = bytes.fromhex(mmsi_hex)
+    wp_data += bytes.fromhex(lat_hex[:-1]) + lat_hex[-1].encode("ascii")
+    wp_data += bytes.fromhex("0" + lon_hex[:-1]) + lon_hex[-1].encode("ascii")
     wp_data += wp_name.ljust(15, b"\xff")
     wp_data += bytes([wp_id])
     if len(wp_data) != 32:
@@ -202,7 +199,7 @@ def unpack_weather_channels(data: bytes) -> list:
     return []
 
 
-def unpack_marine_channel_flags(data: bytes) -> object:
+def unpack_marine_channel_flags(data: bytes) -> tuple:
     """
     0x0 	channel ID 	numeric
     0x1-0x2 flags       bitmask:
@@ -235,7 +232,7 @@ def unpack_marine_channel_flags(data: bytes) -> object:
     return chid, rxshift, rxtxshift, hpallowed, txallowed, lpdefault, unused, dscshipship
 
 
-def unpack_channel_group_definition(data: bytes) -> list:
+def unpack_channel_group_definition(data: bytes) -> tuple:
     """
     0x0 	    channel group enabled 	0x00=no, 0x01=yes
     0x1 	    DSC enabled 	        0x00=no, 0x01=yes
@@ -249,7 +246,7 @@ def unpack_channel_group_definition(data: bytes) -> list:
     return enabled, dsc, atis, name.strip(b'\xff').decode("ascii"), model.strip(b'\xff').decode("ascii")
 
 
-def unpack_private_channel_flags(data: bytes) -> list:
+def unpack_private_channel_flags(data: bytes) -> tuple:
     """
     0x0-0x1 	channel ID 	2 * char (lower case not supported)
     0x2-0x4 	Rx frequency 	5 nibbles BCD (in kHz above 100 MHz)
@@ -275,7 +272,7 @@ def unpack_private_channel_flags(data: bytes) -> list:
     return chid, rxfreq, txfreq, lponly, unused4, unused2, hpallowed
 
 
-def unpack_channel_names(data: bytes) -> object:
+def unpack_channel_names(data: bytes) -> dict:
     names = {
         "group1": [],
         "group2": [],

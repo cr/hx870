@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-from binascii import unhexlify
 import pytest
 
 from hxtool import config, protocol, simulator
@@ -10,13 +7,13 @@ from hxtool import config, protocol, simulator
 def fixture_cp_870_simulator():
     memory = bytearray(b"\xff" * 0x8000)
     memory[0x00a2] = 0x00  # ATIS disabled
-    memory[0x00b0:0x00b6] = unhexlify("872345900003")  # MMSI
-    memory[0x00b6:0x00bc] = unhexlify("972345900005")  # ATIS
+    memory[0x00b0:0x00b6] = bytes.fromhex("872345900003")  # MMSI
+    memory[0x00b6:0x00bc] = bytes.fromhex("972345900005")  # ATIS
     memory[0x010f] = 0x04  # region
-    memory[0x4300:0x4310] = unhexlify("9740019080544157174E001235956745")  # waypoint
+    memory[0x4300:0x4310] = bytes.fromhex("9740019080544157174E001235956745")  # waypoint
     memory[0x4310:0x4316] = "WPT001".encode("ascii")
     memory[0x431f] = 0x01  # waypoint id
-    memory[0x4320:0x4330] = unhexlify("FFFFFFFFFF2707433353010917166757")  # waypoint
+    memory[0x4320:0x4330] = bytes.fromhex("FFFFFFFFFF2707433353010917166757")  # waypoint
     memory[0x4330:0x433f] = "long waypoint 2".encode("ascii")
     memory[0x433f] = 0x02  # waypoint id
     s = simulator.HXSimulator(config.HX870Config, mode="CP", config=memory)
@@ -29,7 +26,7 @@ def fixture_cp_870_simulator():
 @pytest.fixture(name="cp_890_sim")
 def fixture_cp_890_simulator():
     memory = bytearray(b"\xff" * 0x10000)
-    memory[0xd700:0xd710] = unhexlify("FFFFFFFFF0404135384E007402668257")  # waypoint
+    memory[0xd700:0xd710] = bytes.fromhex("FFFFFFFFF0404135384E007402668257")  # waypoint
     memory[0xd710:0xd713] = "foo".encode("ascii")  # waypoint name
     memory[0xd71f] = 0xf0  # waypoint id
     s = simulator.HXSimulator(config.HX890Config, mode="CP", config=memory)
@@ -55,7 +52,7 @@ def test_hx870_mmsi(sim_870_config):
     sim_870_config.write_mmsi(mmsi="318765432")
     assert sim_870_config.read_mmsi() == ("318765432", 3), "MMSI write leaves the update counter alone"
     raw = sim_870_config.p.read_config_memory(sim_870_config.MMSI_OFFSET, 5)
-    assert raw == unhexlify("3187654320"), "MMSI is stored with a zero as 10th digit"
+    assert raw == bytes.fromhex("3187654320"), "MMSI is stored with a zero as 10th digit"
 
     sim_870_config.write_mmsi(mmsi="111222333", counter=7)
     assert sim_870_config.read_mmsi() == ("111222333", 7), "explicit update counter"

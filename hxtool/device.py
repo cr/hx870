@@ -1,12 +1,11 @@
-# -*- coding: utf-8 -*-
-
 from logging import getLogger
 import os
 import re
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 import sys
-from typing import Iterable, List, NamedTuple, Optional, Set, Type
+from typing import NamedTuple
+from collections.abc import Iterable
 
 from .config import HX870Config, HX890Config, HX891Config, GX1400Config
 from .nmea import HX870NMEAProtocol, HX890NMEAProtocol
@@ -30,7 +29,7 @@ exclude_ports = [
 
 class Candidate(NamedTuple):
     """A port and the model class to talk to it with"""
-    model: Type["HX870"]
+    model: type["HX870"]
     tty: str
     identified: bool  # known to be that model (USB metadata or forced), not merely probed
 
@@ -67,7 +66,7 @@ def enumerate(force_device=None, force_model=None, add_simulator=False):
     return [c.model(c.tty, identified=c.identified) for c in devices]
 
 
-def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] = None) -> List[Candidate]:
+def enumerate_devices(models: list[type["HX870"]], force_device: str | None = None) -> list[Candidate]:
 
     # The numeric device selector is only applicable as index into this function's
     # result. Therefore, we need to ignore it and generate the full list here.
@@ -138,7 +137,7 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
     return devices
 
 
-def read_magic(tty: str, baudrates: Set[int] = {38400}) -> int:
+def read_magic(tty: str, baudrates: set[int] = {38400}) -> int:
     for baud in baudrates:
         comm = ReadMagicProtocol(tty, baudrate=baud)
         if comm.hx_hardware:
@@ -150,7 +149,7 @@ def read_magic(tty: str, baudrates: Set[int] = {38400}) -> int:
     return 0
 
 
-class HX870(object):
+class HX870:
     """
     Device object for Standard Horizon HX870 maritime radios
     """

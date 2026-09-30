@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 from argparse import ArgumentParser
 from logging import getLogger
@@ -73,7 +72,7 @@ def main(main_args=None):
     else:
         coloredlogs.install(level="INFO", fmt="%(asctime)s %(levelname)s %(message)s")
 
-    logger.debug("Command arguments: %s" % args)
+    logger.debug(f"Command arguments: {args}")
 
     try:
         result = hxtool.cli.run(args)

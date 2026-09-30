@@ -1,12 +1,10 @@
-# -*- coding: utf-8 -*-
-
 from logging import getLogger
 from serial import Serial
 
 logger = getLogger(__name__)
 
 
-class GenericHXTTY(object):
+class GenericHXTTY:
     """
     Serial communication for Standard Horizon HX maritime radios
     """
@@ -26,7 +24,7 @@ class GenericHXTTY(object):
         self.s.reset_output_buffer()
 
     def write(self, data):
-        logger.debug("OUT: %s" % repr(data))
+        logger.debug(f"OUT: {data!r}")
         return self.s.write(data)
 
     def read(self, *args, **kwargs):

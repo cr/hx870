@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import datetime
 import gpxpy
 import gpxpy.gpx
@@ -184,7 +182,7 @@ def utc_time(timestamp: int) -> datetime.datetime:
     return datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
 
 
-def to_hm(deg: float) -> (int, float):
+def to_hm(deg: float) -> tuple[int, float]:
     """
     Split degrees into whole degrees and minutes, disregarding the sign.
     Minutes are rounded to the four decimals that get printed, so that

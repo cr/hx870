@@ -1,10 +1,6 @@
-# -*- coding: utf-8 -*-
-
-from binascii import hexlify, unhexlify
 from functools import reduce
 from logging import getLogger
 from time import time, sleep
-from typing import List
 
 from . import tty as hxtty
 
@@ -19,14 +15,15 @@ class InternalError(Exception):
     pass
 
 
-class Message(object):
+class Message:
     """
     Generic HX Message Object
     """
 
     UNARY_TYPES = ["#CMDOK", "#CMDER", "#CMDUN", "#CMDSM", "#CMDSY"]  # no args and no checksum
 
-    def __init__(self, message_type: str = None, args: List[str] = None, parse: bytes or str = None):
+    def __init__(self, message_type: str | None = None, args: list[str] | None = None,
+                 parse: bytes | str | None = None):
 
         self.type = message_type
         self.args = args or []
@@ -70,14 +67,14 @@ class Message(object):
             return None
         elif self.type.startswith("#"):
             check = ("\t".join([self.type] + self.args) + "\t").encode("ascii")
-            return "%02X" % reduce(lambda x, y: x ^ y, check)
+            return f"{reduce(lambda x, y: x ^ y, check):02X}"
         elif self.type.startswith("$"):
             check = (self.type[1:] + ",".join(self.args)).encode("ascii")
-            return "%02X" % reduce(lambda x, y: x ^ y, check)
+            return f"{reduce(lambda x, y: x ^ y, check):02X}"
         else:
             return None
 
-    def __str_no_check(self):
+    def _str_no_check(self):
         if self.type.startswith("#"):
             return "\t".join([self.type] + self.args)
         elif self.type.startswith("$"):
@@ -106,8 +103,7 @@ class Message(object):
         return repr(bytes(self))
 
     def __iter__(self):
-        for b in bytes(self):
-            yield b
+        yield from bytes(self)
 
     def __eq__(self, other):
         if str(self) != str(other):
@@ -135,7 +131,7 @@ def _is_text(data: bytes) -> bool:
     return len(data) > 0 and all(0x20 <= b < 0x7f or b in b"\r\n" for b in data)
 
 
-class GenericHXProtocol(object):
+class GenericHXProtocol:
 
     def __init__(self, tty=None, identified=False):
         """
@@ -150,11 +146,11 @@ class GenericHXProtocol(object):
         self.cp_mode = False
         self.nmea_mode = False
         self.nmea_output_seen = False
-        self.__connect(tty)
+        self._connect(tty)
 
-    def __connect(self, tty):
+    def _connect(self, tty):
         self.conn = hxtty.GenericHXTTY(tty)
-        self.__detect_device_mode()
+        self._detect_device_mode()
         self.connected = True
         if self.hx_hardware:
             logger.debug("Device responds like HX style hardware")
@@ -168,7 +164,7 @@ class GenericHXProtocol(object):
         if self.nmea_mode:
             logger.debug("Device is in NMEA mode")
 
-    def __detect_device_mode(self):
+    def _detect_device_mode(self):
 
         # In CP mode, an HX device replies with "@" to "?" and ignores "P".
         # In NMEA mode, some firmware replies with "P" to "P" (seen on HX891BT),
@@ -318,7 +314,7 @@ class GenericHXProtocol(object):
     def read_config_memory(self, offset, length):
         self._check_transfer(offset, length)
         self.wait_for_ready()
-        self.send("#CEPRD", ["%04X" % offset, "%02X" % length])
+        self.send("#CEPRD", [f"{offset:04X}", f"{length:02X}"])
         r = self.receive()  # expect #CMDOK
         if r.type != "#CMDOK":
             raise ProtocolError("Device did not acknowledge read")
@@ -327,7 +323,7 @@ class GenericHXProtocol(object):
             raise ProtocolError("Device did not reply with data")
         self.send("#CMDOK")
         try:
-            reply_offset, reply_length, data = int(d.args[0], 16), int(d.args[1], 16), unhexlify(d.args[2])
+            reply_offset, reply_length, data = int(d.args[0], 16), int(d.args[1], 16), bytes.fromhex(d.args[2])
         except (IndexError, ValueError) as e:
             raise ProtocolError(f"Unexpected data reply format from device: {str(d).strip()}") from e
         if reply_offset != offset or reply_length != length or len(data) != length:
@@ -338,14 +334,14 @@ class GenericHXProtocol(object):
     def write_config_memory(self, offset, data):
         self._check_transfer(offset, len(data))
         self.wait_for_ready()
-        data_string = hexlify(data).decode("ascii").upper()
-        self.send("#CEPWR", ["%04X" % offset, "%02X" % len(data), data_string])
+        data_string = data.hex().upper()
+        self.send("#CEPWR", [f"{offset:04X}", f"{len(data):02X}", data_string])
         r = self.receive()  # expect #CMDOK
         if r.type != "#CMDOK":
             raise ProtocolError("Device did not acknowledge write")
 
 
-class MediaTekProtocol(object):
+class MediaTekProtocol:
 
     def __init__(self, proto: GenericHXProtocol):
         self.p = proto
@@ -465,7 +461,7 @@ class MediaTekProtocol(object):
             received_line_numbers.append(int(r.args[2]))
             raw_waypoint_data = r.args[3:]
             for word in raw_waypoint_data:
-                raw_log_data += unhexlify(word)
+                raw_log_data += bytes.fromhex(word)
             if progress and time() - last_progress_report > 4:
                 percent_done = int(100.0 * len(received_line_numbers) / number_of_lines)
                 logger.info(f"{len(received_line_numbers)} / {number_of_lines} blocks ({percent_done}%)")
@@ -502,17 +498,7 @@ class GX1400Protocol(GenericHXProtocol):
 
     baudrate = 38400
 
-    def __init__(self, tty=None, identified=False):
-        self.conn = None
-        self.connected = False
-        self.identified = identified
-        self.hx_hardware = False
-        self.cp_mode = False
-        self.nmea_mode = False
-        self.nmea_output_seen = False
-        self.__connect(tty)
-
-    def __connect(self, tty):
+    def _connect(self, tty):
         self.conn = hxtty.GenericHXTTY(tty, baudrate=self.baudrate)
         self.connected = True
         logger.debug("Attempting GX1400 sync")

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 from json import load
 import pytest
 from struct import pack

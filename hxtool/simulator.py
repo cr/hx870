@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-from binascii import hexlify, unhexlify
 from logging import getLogger
 from os import read, write, close
 from threading import Event, Thread
@@ -93,9 +90,9 @@ class HXSimulator(Thread):
         if self.stop_running.is_set():
             raise Exception("HXSimulator can not be restarted")
         if self.mode == "NMEA":
-            self.__run_nmea_mode()
+            self._run_nmea_mode()
         elif self.mode == "CP":
-            self.__run_cp_mode()
+            self._run_cp_mode()
         else:
             raise Exception("Invalid simulator mode")
 
@@ -110,7 +107,7 @@ class HXSimulator(Thread):
         except OSError:
             pass
 
-    def __run_nmea_mode(self):
+    def _run_nmea_mode(self):
         logger.debug("Starting simulator thread in NMEA mode")
         message = b""
         sentence = b"$GPLL,,,,\r\n"
@@ -119,7 +116,7 @@ class HXSimulator(Thread):
             write(self.master, sentence[3:])
         next_message_time = time() + self.nmea_delay if self.nmea_delay is not None else None
         while not self.stop_running.wait(self.loop_delay):
-            for b in self.__input():
+            for b in self._input():
                 # We have input and all NMEA messages start with $
                 if len(message) > 0:
                     # If we are receiving part of a message, append
@@ -127,7 +124,7 @@ class HXSimulator(Thread):
                     message += b
                     if message.endswith(b"\r\n"):
                         # If line is complete, process message
-                        self.__process_nmea_message(message)
+                        self._process_nmea_message(message)
                         message = b""
                 elif b == b"$":
                     message = b
@@ -145,7 +142,7 @@ class HXSimulator(Thread):
 
         logger.debug("NMEA simulator thread finished")
 
-    def __input(self):
+    def _input(self):
         """Whatever the host has sent since the last look, one byte at a time"""
         try:
             data = read(self.master, 4096)
@@ -156,14 +153,14 @@ class HXSimulator(Thread):
         for i in range(len(data)):
             yield data[i:i + 1]
 
-    def __process_nmea_message(self, msg):
+    def _process_nmea_message(self, msg):
         logger.debug(f"NMEA simulator processing message {msg}")
 
-    def __run_cp_mode(self):
+    def _run_cp_mode(self):
         logger.debug("Starting simulator thread in CP mode")
         message = b""
         while not self.stop_running.wait(self.loop_delay):
-            for b in self.__input():
+            for b in self._input():
                 # Messages start with 0, # or $ and end with a newline
                 if len(message) > 0:
                     # If we are receiving part of a message, append
@@ -175,9 +172,9 @@ class HXSimulator(Thread):
                             # The real HX870 doesn't react to the 0ACMD:002
                             logger.debug(f"CP simulator ignoring message {message}")
                         elif message.startswith(b"$"):
-                            self.__process_gps_message(message)
+                            self._process_gps_message(message)
                         else:
-                            self.__process_cp_message(message)
+                            self._process_cp_message(message)
                         message = b""
                 elif b == b"0":
                     # Beginning of 0ACMD:002 message?
@@ -198,7 +195,7 @@ class HXSimulator(Thread):
 
         logger.debug("CP simulator thread finished")
 
-    def __reply(self, message_type, args=None):
+    def _reply(self, message_type, args=None):
         fault = self.faults.get(message_type)
         if fault == "drop":
             # The reply never makes it to the host
@@ -226,78 +223,75 @@ class HXSimulator(Thread):
             except BlockingIOError:
                 self.stop_running.wait(self.loop_delay)
 
-    def __process_gps_message(self, msg):
+    def _process_gps_message(self, msg):
         logger.debug(f"CP simulator processing GPS message {msg}")
         msg = Message(parse=msg)
         if msg.type != "$PMTK" or not msg.validate():
             return
-        command = msg.args[0]
-        if command == "000":
-            self.__reply("$PMTK", ["001", "0", "3"])
-        elif command == "605":
-            self.__reply("$PMTK", ["705", "MT3333_AXN5.1.9_MODULE_STD_F0", "343F", "MC-G", "1.0"])
-        elif command == "183":
-            pages = (len(self.gps_log) + 0xfff) // 0x1000
-            slots = len(Locus(self.gps_log))
-            if pages > 0:
-                header = LocusHeader(self.gps_log)
-                content, interval = header.LogContent, header.IntervalSetting
-            else:
-                content, interval = 127, 5
-            self.__reply("$PMTK", ["LOG", str(pages), "1", "b", str(content), str(interval), "0", "0", "1",
-                                   str(slots), str(100 * slots // 6432)])
-            self.__reply("$PMTK", ["001", "183", "3"])
-        elif command == "622":
-            # Dump the log as lines of up to 24 words of 4 bytes each
-            lines = [self.gps_log[i:i + 96] for i in range(0, len(self.gps_log), 96)]
-            self.__reply("$PMTK", ["LOX", "0", str(len(lines))])
-            for number, line in enumerate(lines):
-                words = [hexlify(line[i:i + 4]).decode("ascii").upper() for i in range(0, len(line), 4)]
-                self.__reply("$PMTK", ["LOX", "1", str(number)] + words)
-            self.__reply("$PMTK", ["LOX", "2"])
-            self.__reply("$PMTK", ["001", "622", "3"])
-        elif command == "184":
-            self.gps_log = b""
-            self.__reply("$PMTK", ["001", "184", "3"])
+        match msg.args:
+            case ["000"]:
+                self._reply("$PMTK", ["001", "0", "3"])
+            case ["605"]:
+                self._reply("$PMTK", ["705", "MT3333_AXN5.1.9_MODULE_STD_F0", "343F", "MC-G", "1.0"])
+            case ["183"]:
+                pages = (len(self.gps_log) + 0xfff) // 0x1000
+                slots = len(Locus(self.gps_log))
+                if pages > 0:
+                    header = LocusHeader(self.gps_log)
+                    content, interval = header.LogContent, header.IntervalSetting
+                else:
+                    content, interval = 127, 5
+                self._reply("$PMTK", ["LOG", str(pages), "1", "b", str(content), str(interval), "0", "0", "1",
+                                      str(slots), str(100 * slots // 6432)])
+                self._reply("$PMTK", ["001", "183", "3"])
+            case ["622", *_]:
+                # Dump the log as lines of up to 24 words of 4 bytes each
+                lines = [self.gps_log[i:i + 96] for i in range(0, len(self.gps_log), 96)]
+                self._reply("$PMTK", ["LOX", "0", str(len(lines))])
+                for number, line in enumerate(lines):
+                    words = [line[i:i + 4].hex().upper() for i in range(0, len(line), 4)]
+                    self._reply("$PMTK", ["LOX", "1", str(number)] + words)
+                self._reply("$PMTK", ["LOX", "2"])
+                self._reply("$PMTK", ["001", "622", "3"])
+            case ["184", *_]:
+                self.gps_log = b""
+                self._reply("$PMTK", ["001", "184", "3"])
 
-    def __process_cp_message(self, msg):
+    def _process_cp_message(self, msg):
         logger.debug(f"CP simulator processing message {msg}")
         msg = Message(parse=msg)
         if not msg.validate():
-            self.__reply("#CMDER")
+            self._reply("#CMDER")
             return
-        if msg.type == "#CMDOK":
-            if self.ignore_cmdok:
-                self.ignore_cmdok = False
-            else:
-                self.__reply("#CMDOK")
-        elif msg.type == "#CMDSY":
-            self.__reply("#CMDOK")
-        elif msg.type == "#CVRRQ":
-            self.__reply("#CMDOK")
-            self.__reply("#CVRDQ", ["23.42"])
-        elif msg.type == "#CEPSR":
-            self.__reply("#CMDOK")
-            self.__reply("#CEPSD", ["00"])
-            self.ignore_cmdok = True
-        elif msg.type == "#CEPRD":
-            self.__reply("#CMDOK")
-            offset = int(msg.args[0], 16)
-            size = int(msg.args[1], 16)
-            data = hexlify(self.c[offset:offset + size]).decode("ascii").upper()
-            self.__reply("#CEPDT", [msg.args[0], msg.args[1], data])
-            # Ignore next CMDOK
-            self.ignore_cmdok = True
-        elif msg.type == "#CEPWR":
-            offset = int(msg.args[0], 16)
-            size = int(msg.args[1], 16)
-            data = unhexlify(msg.args[2])
-            if len(data) == size:
-                self.c[offset:offset + size] = data
-                self.__reply("#CMDOK")
-                if len(self.c) != self.type.CONFIG_SIZE:
-                    logger.critical("CP simulator internal memory corruption after write")
-            else:
-                self.__reply("#CMDER")
-        else:
-            self.__reply("#CMDER")
+        match msg.type, msg.args:
+            case "#CMDOK", []:
+                # The host's acknowledgement of a data reply gets no answer
+                if self.ignore_cmdok:
+                    self.ignore_cmdok = False
+                else:
+                    self._reply("#CMDOK")
+            case "#CMDSY", []:
+                self._reply("#CMDOK")
+            case "#CVRRQ", []:
+                self._reply("#CMDOK")
+                self._reply("#CVRDQ", ["23.42"])
+            case "#CEPSR", _:
+                self._reply("#CMDOK")
+                self._reply("#CEPSD", ["00"])
+                self.ignore_cmdok = True
+            case "#CEPRD", [offset, size]:
+                self._reply("#CMDOK")
+                start, length = int(offset, 16), int(size, 16)
+                self._reply("#CEPDT", [offset, size, self.c[start:start + length].hex().upper()])
+                self.ignore_cmdok = True
+            case "#CEPWR", [offset, size, payload]:
+                start, length, data = int(offset, 16), int(size, 16), bytes.fromhex(payload)
+                if len(data) == length:
+                    self.c[start:start + length] = data
+                    self._reply("#CMDOK")
+                    if len(self.c) != self.type.CONFIG_SIZE:
+                        logger.critical("CP simulator internal memory corruption after write")
+                else:
+                    self._reply("#CMDER")
+            case _:
+                self._reply("#CMDER")
