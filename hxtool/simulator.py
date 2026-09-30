@@ -171,8 +171,18 @@ class HXSimulator(Thread):
         logger.debug("CP simulator thread finished")
 
     def __reply(self, message_type, args=None):
-        msg = Message(message_type, args)
         fault = self.faults.get(message_type)
+        if message_type == "#CEPDT" and fault in ("address", "length", "truncate"):
+            # Replies that are well-formed, but do not match the request
+            offset, length, data = args
+            if fault == "address":
+                offset = "%04X" % (int(offset, 16) ^ 0x0040)
+            elif fault == "length":
+                length = "%02X" % (int(length, 16) ^ 0x01)
+            elif fault == "truncate":
+                data = data[:-2]
+            args = [offset, length, data]
+        msg = Message(message_type, args)
         if fault == "checksum":
             # Received checksum has precedence when the message is serialized
             msg.checksum_recv = "%02X" % (int(msg.checksum, 16) ^ 0xff)

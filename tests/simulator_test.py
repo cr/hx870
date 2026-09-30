@@ -197,3 +197,20 @@ def test_cp_checksum_verification(cp_sim, kill_sims):
     del cp_sim.faults["#CVRDQ"]
     p.sync()
     assert p.get_firmware_version() == "23.42", "Firmware version recovers after fault"
+
+
+@pytest.mark.parametrize("fault", ["address", "length", "truncate"])
+def test_cp_read_reply_verification(cp_sim, kill_sims, fault):
+    del kill_sims
+
+    p = GenericHXProtocol(cp_sim.tty)
+    assert p.read_config_memory(0x0100, 6) == b"AM057N", "Read works without fault"
+
+    # A data reply that does not match the request must be rejected,
+    # even though its checksum is valid
+    cp_sim.faults["#CEPDT"] = fault
+    with pytest.raises(ProtocolError, match="Unexpected"):
+        p.read_config_memory(0x0100, 6)
+    del cp_sim.faults["#CEPDT"]
+    p.sync()
+    assert p.read_config_memory(0x0100, 6) == b"AM057N", "Read recovers after fault"

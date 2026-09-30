@@ -339,7 +339,14 @@ class GenericHXProtocol(object):
         if d.type != "#CEPDT":
             raise ProtocolError("Device did not reply with data")
         self.send("#CMDOK")
-        return unhexlify(d.args[2])
+        try:
+            reply_offset, reply_length, data = int(d.args[0], 16), int(d.args[1], 16), unhexlify(d.args[2])
+        except (IndexError, ValueError) as e:
+            raise ProtocolError(f"Unexpected data reply format from device: {str(d).strip()}") from e
+        if reply_offset != offset or reply_length != length or len(data) != length:
+            raise ProtocolError(f"Unexpected data reply from device: requested {length} bytes at 0x{offset:04x}, "
+                                f"got {len(data)} bytes labeled as {reply_length} bytes at 0x{reply_offset:04x}")
+        return data
 
     def write_config_memory(self, offset, data):
         self.wait_for_ready()
