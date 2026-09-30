@@ -77,34 +77,18 @@ def assert_written_except(sim, image, untouched, factory):
 
 
 @pytest.mark.parametrize("sim", MODELS, indirect=True)
-def test_config_write_protects_identity(sim):
+@pytest.mark.parametrize("force, write_flash_id", [(False, False), (False, True), (True, False), (True, True)])
+def test_config_write_overrides(sim, force, write_flash_id):
+    """Without overrides the writer leaves the magic, the flash ID and the protected
+    ranges alone; write_flash_id releases the flash ID, force the protected ranges"""
     model, factory, image = sim.type, factory_image(sim.type), changed_image(sim.type)
-    connect(sim).config_write(image)
-    untouched = magic_ranges(model) + [FLASH_ID_RANGE[model]] + OTHER_PROTECTED[model]
+    connect(sim).config_write(image, force=force, write_flash_id=write_flash_id)
+    untouched = magic_ranges(model)
+    if not write_flash_id:
+        untouched.append(FLASH_ID_RANGE[model])
+    if not force:
+        untouched += OTHER_PROTECTED[model]
     assert_written_except(sim, image, untouched, factory)
-
-
-@pytest.mark.parametrize("sim", MODELS, indirect=True)
-def test_config_write_flash_id_on_request(sim):
-    model, factory, image = sim.type, factory_image(sim.type), changed_image(sim.type)
-    connect(sim).config_write(image, write_flash_id=True)
-    untouched = magic_ranges(model) + OTHER_PROTECTED[model]
-    assert_written_except(sim, image, untouched, factory)
-
-
-@pytest.mark.parametrize("sim", MODELS, indirect=True)
-def test_config_write_force_writes_the_rest(sim):
-    model, factory, image = sim.type, factory_image(sim.type), changed_image(sim.type)
-    connect(sim).config_write(image, force=True)
-    untouched = magic_ranges(model) + [FLASH_ID_RANGE[model]]
-    assert_written_except(sim, image, untouched, factory)
-
-
-@pytest.mark.parametrize("sim", MODELS, indirect=True)
-def test_config_write_force_and_flash_id(sim):
-    model, factory, image = sim.type, factory_image(sim.type), changed_image(sim.type)
-    connect(sim).config_write(image, force=True, write_flash_id=True)
-    assert_written_except(sim, image, magic_ranges(model), factory)
 
 
 @pytest.mark.parametrize("sim", MODELS, indirect=True)

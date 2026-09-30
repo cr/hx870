@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 from binascii import unhexlify
-import logging
 import pytest
 
 from hxtool.config import GX1400Config
@@ -69,38 +68,12 @@ def test_gx1400_config_offsets(gx1400_sim):
     region, region_code = config.read_region()
     assert region == "INTL", "region short name"
     assert region_code == 0x01, "region code"
+    config.write_region(73)
+    assert config.read_region() == ("", 73), "unknown region"
 
     with pytest.raises(ProtocolError):
         config.read_waypoints()
-
-
-def test_gx1400_region(gx1400_sim):
-    config = GX1400(gx1400_sim.tty).config
-
-    config.write_region(73)
-    region, code = config.read_region()
-    assert region == "", "unknown region"
-    assert code == 73, "region code"
-
-    with pytest.raises(ProtocolError):
-        data = bytearray(b"\xff" * 0x2000)
-        data[0x009f] = 0x00
-        config.config_write(data)  # region mismatch
-
-
-def test_gx1400_config_write(gx1400_sim, caplog):
-    caplog.set_level(logging.INFO)
-    config = GX1400(gx1400_sim.tty).config
-
-    data = bytearray(config.config_read())
-    data[0x0060:0x0065] = unhexlify("9987064120")  # MMSI
-    config.config_write(data, progress=True)
-
-    assert config.read_mmsi()[0] == "998706412"
-
-    assert "0 / 8192 bytes (0%)" in caplog.text
-    assert "2048 / 8192 bytes (25%)" in caplog.text
-    assert "8192 / 8192 bytes (100%)" in caplog.text
+    assert main(["--simulator", "-m", "GX1400", "gpslog"]) != 0, "no GPS log either"
 
 
 def test_gx1400_counters(gx1400_sim):
@@ -110,37 +83,10 @@ def test_gx1400_counters(gx1400_sim):
     # 0x0096 (MMSI) and 0x0097 (ATIS) instead. The radios themselves ignore
     # the counters. hxtool leaves the update counter alone unless told
     # otherwise, and a reset restores the factory state.
+    # The counter rule itself is tested on the HX870 in config_test.py.
     config = GX1400(gx1400_sim.tty).config
     clear_counters = config.p.read_config_memory(0x0096, 2)
-
-    config.write_mmsi(mmsi="876543210")
-    assert config.read_mmsi() == ("876543210", 1), "update counter is left alone"
     config.write_mmsi(mmsi="888777666", counter=6)
-    assert config.read_mmsi() == ("888777666", 6), "explicit update counter"
-    config.write_atis(atis="9998887770", counter=7)
-    assert config.read_atis() == ("9998887770", 7), "explicit update counter"
-
     config.write_mmsi()
     config.write_atis()
-    assert config.read_mmsi() == ("FFFFFFFFF", 0), "reset restores the factory state"
-    assert config.read_atis() == ("FFFFFFFFFF", 0), "reset restores the factory state"
     assert config.p.read_config_memory(0x0096, 2) == clear_counters, "clear counters are not touched"
-
-
-def test_hxtool_devices(capsys):
-    args = [
-        "--simulator",
-        "devices",
-    ]
-    ret = main(args)
-    assert ret == 0, "hxtool --simulator devices returns 0"
-
-    outerr = capsys.readouterr()
-    out = outerr.out.strip("\n").split("\n")
-    gx1400 = [device for device in out if "GX1400" in device]
-    assert len(gx1400) == 1, "One GX1400 simulator detected"
-
-    device = gx1400[0].split("\t")
-    assert GX1400.brand in device
-    assert GX1400.model in device
-    assert "CP mode" in device

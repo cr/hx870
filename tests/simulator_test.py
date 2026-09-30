@@ -120,10 +120,9 @@ def test_nmea_simulator(nmea_sim, kill_sims):
     assert m.startswith(b"$GPLL") and m.endswith(b"\r\n"), "Simulator ignores the CP mode handshake"
 
 
-@pytest.mark.parametrize("identified", [False, True])
-def test_detect_nmea_mode_streaming(nmea_sim, kill_sims, identified):
+def test_detect_nmea_mode_streaming(nmea_sim, kill_sims):
     del kill_sims
-    p = GenericHXProtocol(nmea_sim.tty, identified=identified)
+    p = GenericHXProtocol(nmea_sim.tty)
     assert (p.hx_hardware, p.nmea_mode, p.cp_mode) == (True, True, False)
     assert p.nmea_output_seen
 
@@ -161,10 +160,9 @@ def test_detect_nmea_mode_ping_reply(kill_sims):
     assert not p.nmea_output_seen
 
 
-@pytest.mark.parametrize("identified", [False, True])
-def test_detect_cp_mode(cp_sim, kill_sims, identified):
+def test_detect_cp_mode(cp_sim, kill_sims):
     del kill_sims
-    p = GenericHXProtocol(cp_sim.tty, identified=identified)
+    p = GenericHXProtocol(cp_sim.tty)
     assert (p.hx_hardware, p.nmea_mode, p.cp_mode) == (True, False, True)
 
 

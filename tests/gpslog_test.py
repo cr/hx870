@@ -128,13 +128,6 @@ def test_gpslog_empty_log(tmpdir, capsys, kill_sims):
     assert not json_file.exists()
 
 
-def test_gpslog_gx1400(capsys, kill_sims):
-    del kill_sims
-
-    assert main(["--simulator", "-m", "GX1400", "gpslog"]) != 0
-    assert "GPS log" in capsys.readouterr().err
-
-
 def test_gpx_export_fix_and_satellites(tmpdir):
     from hxtool.cli.gpslog import write_gpx
     log = log_sector([

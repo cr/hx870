@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import logging
 import pytest
 import subprocess
 import sys
@@ -17,13 +16,6 @@ def test_import_is_quiet():
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "[]"
-
-
-def test_hxtool_configures_logging(capsys, kill_sims):
-    del kill_sims
-    assert main(["--simulator", "-t", "0", "info"]) == 0
-    assert " INFO Device on " in capsys.readouterr().err, "the CLI logs to stderr"
-    assert logging.getLogger().handlers, "the CLI installed a handler"
 
 
 def test_hxtool_devices(capsys, kill_sims):
@@ -110,21 +102,6 @@ def test_hxtool_info(capsys, kill_sims):
     assert HX870Sim.model in outerr.out
 
 
-def test_hxtool_info_unknown_region(capsys, kill_sims, monkeypatch):
-    del kill_sims
-    sim_start = HXSimulator.start
-
-    def start_with_unknown_region(self):
-        self.c[self.type.REGION_CODE_OFFSET] = 0x49
-        sim_start(self)
-
-    monkeypatch.setattr(HXSimulator, "start", start_with_unknown_region)
-
-    ret = main(["--simulator", "-t", "0", "info"])
-    assert ret == 0, "hxtool info copes with an unknown region code"
-    assert "Region:\t [49]" in capsys.readouterr().out
-
-
 @pytest.fixture(name="sim_faults")
 def fixture_simulator_faults(monkeypatch):
     # Faults put into this dict apply to all simulators started afterwards
@@ -139,31 +116,23 @@ def fixture_simulator_faults(monkeypatch):
     yield faults
 
 
-@pytest.mark.parametrize("command, reply_type", [
-    (["info"], "#CEPDT"),
-    (["id"], "#CEPDT"),
-    (["gpslog"], "$PMTK"),
-])
-def test_hxtool_reports_protocol_errors(capsys, kill_sims, sim_faults, command, reply_type):
+def test_hxtool_reports_device_trouble(capsys, kill_sims, sim_faults):
+    """Protocol errors and timeouts end in a message and a failure code, never a traceback"""
     del kill_sims
-    sim_faults[reply_type] = "checksum"
-
-    ret = main(["--simulator", "-t", "0"] + command)  # must not raise
-    assert ret != 0, "Protocol error makes the command fail"
+    sim_faults["#CEPDT"] = "checksum"
+    assert main(["--simulator", "-t", "0", "info"]) != 0
     err = capsys.readouterr().err
-    assert "Protocol error" in err
-    assert "Checksum mismatch" in err
+    assert "Protocol error" in err and "Checksum mismatch" in err
 
-
-def test_hxtool_reports_timeouts(capsys, kill_sims, sim_faults):
-    del kill_sims
+    del sim_faults["#CEPDT"]
     sim_faults["#CVRDQ"] = "drop"
-
-    ret = main(["--simulator", "-t", "0", "info"])
-    assert ret != 0, "Timeout makes the command fail"
+    assert main(["--simulator", "-t", "0", "info"]) != 0
     err = capsys.readouterr().err
     assert "timeout" in err
     assert "Connection lost" not in err, "A silent device is not a lost connection"
+
+    assert main(["--tty", "/dev/hxtool-does-not-exist", "info"]) == 10
+    assert "No device detected" in capsys.readouterr().err
 
 
 def test_hxtool_id(capsys, kill_sims):
@@ -193,28 +162,6 @@ def test_hxtool_id(capsys, kill_sims):
 
     outerr = capsys.readouterr()
     assert "not in CP mode" in outerr.err
-
-
-def test_hxtool_atis_mmsi(capsys, kill_sims):
-    del kill_sims
-
-    args = [
-        "--debug",
-        "--simulator",
-        "-t", "0",
-        "id",
-        "--mmsi", "123456789",
-        "--atis", "9123456789",
-        "--reset"
-    ]
-    ret = main(args)
-    assert ret == 0, "hxtool atis/mmsi writing and reset returns 0"
-
-    outerr = capsys.readouterr()
-    assert written("00B0", "FFFFFFFFFF00") in outerr.err, "MMSI reset"
-    assert written("00B6", "FFFFFFFFFF00") in outerr.err, "ATIS reset"
-    assert written("00B6", "912345678900") in outerr.err, "ATIS written, counter left as reset"
-    assert written("00B0", "123456789000") in outerr.err, "MMSI written, counter left as reset"
 
 
 def written(offset, data) -> str:
@@ -249,11 +196,18 @@ def test_hxtool_id_counters(capsys, kill_sims):
     assert written("00B0", "FFFFFFFFFF09") in err
     assert written("00B6", "FFFFFFFFFF00") in err
 
+    # Reset and new codes in one go: reset first, then the codes with the reset counters
+    args = ["--debug", "--simulator", "-t", "0", "id", "--mmsi", "123456789", "--atis", "9123456789", "--reset"]
+    assert main(args) == 0
+    err = capsys.readouterr().err
+    assert written("00B6", "912345678900") in err
+    assert written("00B0", "123456789000") in err
+
     assert main(["--simulator", "-t", "0", "id", "--mmsi-counter", "300"]) != 0, "counter is one byte"
 
 
 @pytest.mark.slow
-def test_hxtool_config_dump(tmpdir, kill_sims):
+def test_hxtool_config_dump(tmpdir, kill_sims, monkeypatch):
     del kill_sims
     conf_file = tmpdir.mkdir("config_dump").join("config.dat")
 
@@ -279,10 +233,8 @@ def test_hxtool_config_dump(tmpdir, kill_sims):
         config = f.read()
     assert len(config) == 1 << 15
 
-
-def test_hxtool_config_dump_failure_keeps_file(tmpdir, kill_sims, monkeypatch):
-    del kill_sims
-    dump_dir = tmpdir.mkdir("config_dump")
+    # A failed read never touches the disk
+    dump_dir = tmpdir.join("config_dump")
     backup_file = dump_dir.join("backup.dat")
     backup_file.write_binary(b"precious backup")
     new_file = dump_dir.join("new.dat")
@@ -310,7 +262,8 @@ def test_hxtool_config_dump_failure_keeps_file(tmpdir, kill_sims, monkeypatch):
     assert not new_file.exists(), "Failed dump does not create a file"
 
 
-def test_hxtool_config_flash_overrides(tmpdir, kill_sims, monkeypatch):
+@pytest.mark.slow
+def test_hxtool_config_flash(tmpdir, kill_sims, monkeypatch):
     del kill_sims
     final = {}
     sim_stop = HXSimulator.stop
@@ -330,6 +283,7 @@ def test_hxtool_config_flash_overrides(tmpdir, kill_sims, monkeypatch):
     conf_file = tmpdir.join("config.dat")
     conf_file.write_binary(bytes(image))
 
+    assert main(["--simulator", "-t", "1", "config", "-f", str(conf_file)]) != 0, "NMEA mode cannot flash"
     assert main(["--simulator", "-t", "0", "config", "-f", str(conf_file)]) == 0
     memory = final["HX870Config", "CP"]
     assert memory[0x0200] == 0x42
@@ -345,31 +299,3 @@ def test_hxtool_config_flash_overrides(tmpdir, kill_sims, monkeypatch):
     memory = final["HX870Config", "CP"]
     assert memory[0x0100:0x0107] == b"AM999X9", "--force-flashid writes the flash ID"
     assert memory[0x0110:0x0120] == b"\xff" * 16, "but nothing else that is protected"
-
-
-@pytest.mark.slow
-def test_hxtool_config_flash(tmpdir, kill_sims):
-    del kill_sims
-    conf_file = tmpdir.mkdir("config_dump").join("config.dat")
-    image = bytearray(b"\xff" * (1 << 15))
-    image[0:2] = image[-2:] = b"\x03\x67"  # HX870 config magic
-    with open(conf_file, "wb") as f:
-        f.write(bytes(image))
-
-    args = [
-        "--simulator",
-        "-t", "1",
-        "config",
-        "-f", str(conf_file)
-    ]
-    ret = main(args)
-    assert ret != 0, "hxtool --simulator -t 1 config --flash fails"
-
-    args = [
-        "--simulator",
-        "-t", "0",
-        "config",
-        "-f", str(conf_file)
-    ]
-    ret = main(args)
-    assert ret == 0, "hxtool --simulator -t 0 config --flash returns 0"

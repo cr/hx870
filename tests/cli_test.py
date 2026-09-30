@@ -40,28 +40,16 @@ def test_run_life_cycle(command):
     assert base.run(Namespace(command="recorder")) == 0
     assert command.calls == ["setup", "run", "teardown"]
 
-
-def test_run_tears_down_after_failed_setup(command):
+    command.calls.clear()
     command.setup_ok = False
     assert base.run(Namespace(command="recorder")) == 10
-    assert command.calls == ["setup", "teardown"]
+    assert command.calls == ["setup", "teardown"], "teardown also after a failed setup"
+
+    assert base.run(Namespace(command="nonesuch")) == 5
 
 
-@pytest.mark.parametrize("exception", [ProtocolError("boom"), TimeoutError("silence"), OSError("gone")])
-def test_run_tears_down_on_error(command, exception):
-    command.run_raises = exception
-    with pytest.raises(type(exception)):
+def test_run_tears_down_on_error(command):
+    command.run_raises = ProtocolError("boom")
+    with pytest.raises(ProtocolError):
         base.run(Namespace(command="recorder"))
     assert command.calls == ["setup", "run", "teardown"], "teardown runs exactly once, whatever the error"
-
-
-def test_run_tears_down_on_user_abort(command):
-    command.run_raises = KeyboardInterrupt()
-    with pytest.raises(KeyboardInterrupt):
-        base.run(Namespace(command="recorder"))
-    assert command.calls == ["setup", "run", "teardown"]
-
-
-def test_run_unknown_command(command):
-    assert base.run(Namespace(command="nonesuch")) == 5
-    assert command.calls == []

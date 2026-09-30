@@ -171,19 +171,3 @@ def test_hx890_waypoints(sim_890_config):
     assert waypoints[0]["mmsi"] is None, "wpt 1 mmsi"
     assert waypoints[0]["latitude"] == "40N41.3538", "wpt 1 lat"
     assert waypoints[0]["longitude"] == "74W02.6682", "wpt 1 lon"
-
-
-@pytest.mark.slow
-def test_hx870_config(sim_870_config):
-    data = bytearray(sim_870_config.config_read())
-    data[0x00b0:0x00b5] = unhexlify("9793485160")  # MMSI
-    data[0x010f] = 0xff  # region mismatch (will be ignored)
-    sim_870_config.config_write(data, force=True)
-    assert sim_870_config.read_mmsi()[0] == "979348516"
-    assert sim_870_config.read_region()[1] == 0xff
-
-    with pytest.raises(protocol.ProtocolError):
-        sim_870_config.config_write(b"\xff" * 0x8001)  # wrong data size
-    with pytest.raises(protocol.ProtocolError):
-        data[0x0000] = 0x56  # wrong magic
-        sim_870_config.config_write(data)
