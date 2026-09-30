@@ -41,6 +41,28 @@ def test_hxtool_devices(capsys, kill_sims):
     assert HX870Sim.model in nmea_sim
 
 
+def test_hxtool_devices_selectors(capsys, kill_sims):
+    del kill_sims
+
+    # The model selector is honoured, so that the indices shown are the
+    # ones that --tty N refers to when given along with the same --model
+    assert main(["--simulator", "--model", "HX890", "devices"]) == 0
+    out = capsys.readouterr().out.strip("\n").split("\n")
+    assert len(out) == 2, "Only the HX890 simulators are listed"
+    assert out[0].startswith("[0]") and "CP mode" in out[0]
+    assert out[1].startswith("[1]") and "NMEA mode" in out[1]
+    assert all("HX890S Simulator" in line for line in out)
+
+    assert main(["--simulator", "--model", "HX890", "--tty", "1", "info"]) == 0
+    assert "HX890SIM in NMEA mode" in capsys.readouterr().err, "Index 1 is what devices listed as [1]"
+
+    # The device selector is ignored, as the list is what defines the indices
+    assert main(["--simulator", "--tty", "3", "devices"]) == 0
+    out = capsys.readouterr().out.strip("\n").split("\n")
+    assert len(out) == 7, "All simulators are listed"
+    assert [line.split("\t")[0] for line in out] == [f"[{i}]" for i in range(7)]
+
+
 def test_hxtool_info(capsys, kill_sims):
     del kill_sims
     args = [

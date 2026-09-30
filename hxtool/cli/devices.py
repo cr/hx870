@@ -14,7 +14,9 @@ class DevicesCommand(CliCommand):
     help = "enumerate detected devices"
 
     def run(self):
-        devices = enumerate(add_simulator=self.args.simulator)
+        # --model is honoured, because it changes what a numeric --tty refers to.
+        # --tty is not, because this list is what defines those numbers.
+        devices = enumerate(force_model=self.args.model, add_simulator=self.args.simulator)
         if len(devices) > 0:
             for device in devices:
                 mode = "unknown mode (BE CAREFUL)"
