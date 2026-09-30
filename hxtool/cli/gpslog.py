@@ -124,7 +124,7 @@ def write_gpx(log_data: bytes, file_name: str) -> int:
     # Create points:
     for point in log:
         p = gpxpy.gpx.GPXTrackPoint(
-            time=datetime.datetime.utcfromtimestamp(point["utc_time"]),
+            time=utc_time(point["utc_time"]),
             latitude=point["latitude"],
             longitude=point["longitude"],
             elevation=point["height"]
@@ -167,6 +167,10 @@ def write_raw(log_data: bytes, file_name: str) -> int:
     return 0
 
 
+def utc_time(timestamp: int) -> datetime.datetime:
+    return datetime.datetime.fromtimestamp(timestamp, datetime.timezone.utc)
+
+
 def to_hm(deg: float) -> (int, float):
     """
     Split degrees into whole degrees and minutes, disregarding the sign.
@@ -188,7 +192,7 @@ def dump_log(log_data):
         lat_dir = 'N' if wp['latitude'] >= 0 else 'S'
         lon_deg, lon_min = to_hm(wp['longitude'])
         lon_dir = 'E' if wp['longitude'] >= 0 else 'W'
-        print(f"{datetime.datetime.utcfromtimestamp(wp['utc_time']).isoformat()}\t"
+        print(f"{utc_time(wp['utc_time']).strftime('%Y-%m-%dT%H:%M:%SZ')}\t"
               f"{lat_deg:02d}°{lat_min:07.04f}{lat_dir}\t"
               f"{lon_deg:03d}°{lon_min:07.04f}{lon_dir}\t"
               f"{wp['height']:d}m\t"

@@ -72,6 +72,7 @@ def test_gpslog_print(capsys, sims_with_log, kill_sims):
     assert main(["--simulator", "-t", "0", "gpslog", "--print"]) == 0
     out = capsys.readouterr().out.splitlines()
     assert len(out) == 4
+    assert out[0].startswith("2023-11-14T22:13:20Z\t"), "timestamps are printed as UTC"
     assert "\t54°30.0000N\t012°15.0000E\t" in out[0]
     assert "\t54°30.0000N\t012°15.0000W\t" in out[1]
     assert "\t33°45.0000S\t151°07.5000E\t" in out[2]
@@ -82,9 +83,14 @@ def test_gpslog_export_and_erase(tmpdir, capsys, monkeypatch, sims_with_log, kil
     del sims_with_log, kill_sims
     json_file = tmpdir.join("log.json")
     raw_file = tmpdir.join("log.raw")
+    gpx_file = tmpdir.join("log.gpx")
 
-    assert main(["--simulator", "-t", "0", "gpslog", "--json", str(json_file), "--raw", str(raw_file)]) == 0
+    args = ["--json", str(json_file), "--raw", str(raw_file), "--gpx", str(gpx_file)]
+    assert main(["--simulator", "-t", "0", "gpslog"] + args) == 0
     assert raw_file.read_binary() == SAMPLE_LOG
+    gpx = gpx_file.read_text("ascii")
+    assert gpx.count("<trkpt ") == 4
+    assert "<time>2023-11-14T22:13:20Z</time>" in gpx, "GPX timestamps are marked as UTC"
     with open(json_file) as f:
         trackpoints = load(f)["trackpoints"]
     assert len(trackpoints) == 4
