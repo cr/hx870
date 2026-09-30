@@ -64,8 +64,11 @@ class HXSimulator(Thread):
             self.c = config
             assert len(config) == self.type.CONFIG_SIZE, "Invalid config size"
         else:
-            # Populate config memory
+            # Populate config memory like a radio's: magic at both ends, flash ID
             self.c = bytearray(b"\xff" * self.type.CONFIG_SIZE)
+            magic = self.type.CONFIG_MAGIC.to_bytes(2, "big")
+            self.c[0:2] = magic
+            self.c[-2:] = magic
             fid = self.type.FLASH_ID[0].encode("ascii")
             fid_offset = self.type.FLASH_ID_OFFSET
             self.c[fid_offset:fid_offset+len(fid)] = fid
@@ -116,13 +119,7 @@ class HXSimulator(Thread):
             write(self.master, sentence[3:])
         next_message_time = time() + self.nmea_delay if self.nmea_delay is not None else None
         while not self.stop_running.wait(self.loop_delay):
-            try:
-                b = read(self.master, 1)
-            except BlockingIOError:
-                b = b""
-            except OSError:  # Simulator likely closed, tty died
-                b = b""
-            if len(b) > 0:
+            for b in self.__input():
                 # We have input and all NMEA messages start with $
                 if len(message) > 0:
                     # If we are receiving part of a message, append
@@ -140,15 +137,24 @@ class HXSimulator(Thread):
                 else:
                     # Ignore all other bytes outside of messages
                     logger.debug(f"NMEA simulator ignoring unexpected input {b}")
-            else:
-                # No input, so check whether it's time to send
-                # a dummy NMEA message.
-                now = time()
-                if next_message_time is not None and now >= next_message_time:
-                    write(self.master, sentence)
-                    next_message_time = now + self.nmea_delay
+            # Is it time to send a dummy NMEA message?
+            now = time()
+            if next_message_time is not None and now >= next_message_time:
+                write(self.master, sentence)
+                next_message_time = now + self.nmea_delay
 
         logger.debug("NMEA simulator thread finished")
+
+    def __input(self):
+        """Whatever the host has sent since the last look, one byte at a time"""
+        try:
+            data = read(self.master, 4096)
+        except BlockingIOError:
+            return
+        except OSError:  # Simulator likely closed, tty died
+            return
+        for i in range(len(data)):
+            yield data[i:i + 1]
 
     def __process_nmea_message(self, msg):
         logger.debug(f"NMEA simulator processing message {msg}")
@@ -157,15 +163,8 @@ class HXSimulator(Thread):
         logger.debug("Starting simulator thread in CP mode")
         message = b""
         while not self.stop_running.wait(self.loop_delay):
-            try:
-                b = read(self.master, 1)
-            except BlockingIOError:
-                b = b""
-            except OSError:  # Simulator likely closed, tty died
-                b = b""
-            if len(b) > 0:
-                logger.debug(f"CP mode got {b}")
-                # We have input and all NMEA messages start with $
+            for b in self.__input():
+                # Messages start with 0, # or $ and end with a newline
                 if len(message) > 0:
                     # If we are receiving part of a message, append
                     # input to message buffer until newline received.

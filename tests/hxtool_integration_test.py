@@ -321,12 +321,51 @@ def test_hxtool_config_dump_failure_keeps_file(tmpdir, kill_sims, monkeypatch):
     assert not new_file.exists(), "Failed dump does not create a file"
 
 
+def test_hxtool_config_flash_overrides(tmpdir, kill_sims, monkeypatch):
+    del kill_sims
+    final = {}
+    sim_stop = HXSimulator.stop
+
+    def stop_and_record(self):
+        final[self.type.__name__, self.mode] = bytes(self.c)
+        sim_stop(self)
+
+    monkeypatch.setattr(HXSimulator, "stop", stop_and_record)
+
+    # An image with a foreign flash ID and a changed last-turned-off block
+    image = bytearray(b"\xff" * 0x8000)
+    image[0:2] = image[-2:] = b"\x03\x67"
+    image[0x0100:0x0107] = b"AM999X9"
+    image[0x0110:0x0120] = bytes(range(16))
+    image[0x0200] = 0x42
+    conf_file = tmpdir.join("config.dat")
+    conf_file.write_binary(bytes(image))
+
+    assert main(["--simulator", "-t", "0", "config", "-f", str(conf_file)]) == 0
+    memory = final["HX870Config", "CP"]
+    assert memory[0x0200] == 0x42
+    assert memory[0x0100:0x0107] == b"AM057N\xff", "flash ID protected"
+    assert memory[0x0110:0x0120] == b"\xff" * 16, "last turned off block protected"
+
+    assert main(["--simulator", "-t", "0", "config", "-f", str(conf_file), "--force"]) == 0
+    memory = final["HX870Config", "CP"]
+    assert memory[0x0100:0x0107] == b"AM057N\xff", "flash ID still protected"
+    assert memory[0x0110:0x0120] == bytes(range(16)), "--force writes the rest"
+
+    assert main(["--simulator", "-t", "0", "config", "-f", str(conf_file), "--force-flashid"]) == 0
+    memory = final["HX870Config", "CP"]
+    assert memory[0x0100:0x0107] == b"AM999X9", "--force-flashid writes the flash ID"
+    assert memory[0x0110:0x0120] == b"\xff" * 16, "but nothing else that is protected"
+
+
 @pytest.mark.slow
 def test_hxtool_config_flash(tmpdir, kill_sims):
     del kill_sims
     conf_file = tmpdir.mkdir("config_dump").join("config.dat")
+    image = bytearray(b"\xff" * (1 << 15))
+    image[0:2] = image[-2:] = b"\x03\x67"  # HX870 config magic
     with open(conf_file, "wb") as f:
-        f.write(b"\xff" * (1 << 15))
+        f.write(bytes(image))
 
     args = [
         "--simulator",

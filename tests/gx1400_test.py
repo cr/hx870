@@ -2,6 +2,7 @@
 
 from binascii import unhexlify
 import os
+import logging
 import pytest
 from sys import platform
 
@@ -44,10 +45,10 @@ def fixture_gx1400_simulator():
     s.join(timeout=1)
 
 
-def test_blank_device(capsys, blank_sim):
+def test_blank_device(caplog, blank_sim):
     device = GX1400(blank_sim.tty)
-    outerr = capsys.readouterr()
-    assert "does not behave or look like GX1400" in outerr.err
+    assert device.config is None
+    assert "does not behave or look like GX1400" in caplog.text
 
 
 def test_gx1400_device(gx1400_sim):
@@ -55,8 +56,10 @@ def test_gx1400_device(gx1400_sim):
 
     assert device.comm.hx_hardware
     assert device.comm.cp_mode
-    assert device.comm.get_firmware_version() == "0.99"
+    assert device.config.firmware_version() == "0.99"
+    assert device.config.variant() == "GX1400GPS-SIM"
     assert device.handle == "GX1400GPS-SIM"
+    assert device.config.flash_id() == "AM065N"
 
 
 def test_gx1400_config_offsets(gx1400_sim):
@@ -91,7 +94,8 @@ def test_gx1400_region(gx1400_sim):
         config.config_write(data)  # region mismatch
 
 
-def test_gx1400_config_write(gx1400_sim, capsys):
+def test_gx1400_config_write(gx1400_sim, caplog):
+    caplog.set_level(logging.INFO)
     config = GX1400(gx1400_sim.tty).config
 
     data = bytearray(config.config_read())
@@ -100,10 +104,9 @@ def test_gx1400_config_write(gx1400_sim, capsys):
 
     assert config.read_mmsi()[0] == "998706412"
 
-    outerr = capsys.readouterr()
-    assert "0 / 8192 bytes (0%)" in outerr.err
-    assert "2048 / 8192 bytes (25%)" in outerr.err
-    assert "8192 / 8192 bytes (100%)" in outerr.err
+    assert "0 / 8192 bytes (0%)" in caplog.text
+    assert "2048 / 8192 bytes (25%)" in caplog.text
+    assert "8192 / 8192 bytes (100%)" in caplog.text
 
 
 def test_gx1400_counters(gx1400_sim):

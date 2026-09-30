@@ -1,6 +1,7 @@
 # -*- coding: ascii -*-
 
 import pytest
+import re
 
 import hxtool
 from hxtool.device import enumerate, GX1400, HX870, HX890, models, read_magic
@@ -92,7 +93,11 @@ def test_enumerate_devices(monkeypatch, caplog):
     probed = []
     unlisted = {"/dev/pty7": 890}  # ports the system does not list
 
+    def mock_grep(regexp):
+        return (port for port in mock_comports() if re.search(regexp, port.device))
+
     monkeypatch.setattr(serial.tools.list_ports, "comports", mock_comports)
+    monkeypatch.setattr(serial.tools.list_ports, "grep", mock_grep)
     monkeypatch.setattr(hxtool.device, "read_magic", mock_read_magic)
 
     # Detection by USB metadata

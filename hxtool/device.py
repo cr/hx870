@@ -184,7 +184,7 @@ class HX870(object):
                 self.config = self.config_model(self.comm)
                 self.nmea = None
                 self.gps = self.gps_model(self.comm)
-                fw = self.comm.get_firmware_version()
+                fw = self.config.firmware_version()
                 logger.info(f"Device on {self.tty} is {self.handle} in CP mode, firmware version {fw}")
             elif self.comm.nmea_mode:
                 self.config = None
@@ -209,9 +209,6 @@ class HX870(object):
     @property
     def cp_mode(self) -> bool:
         return self.comm.cp_mode
-
-    def check_flash_id(self, flash_id: list = None):
-        return self.comm.check_flash_id(flash_id or self.config_model.FLASH_ID)
 
     @classmethod
     def simulators(cls) -> Iterable[Candidate]:
@@ -275,19 +272,15 @@ class GX1400(HX870):
     gps_model = None
 
     def init_config(self):
-        # Verify we're talking to a GX1400 on that tty
-        self.comm.hx_hardware = self.check_flash_id()
+        # A serial link has no USB identity, so verify we're talking to a GX1400
+        # by its flash ID
+        config = self.config_model(self.comm)
+        self.comm.hx_hardware = self.comm.hx_hardware and config.check_flash_id()
         if self.comm.hx_hardware and self.comm.cp_mode:
-            self.config = self.config_model(self.comm)
-
-            # There are multiple GX1400 variants. The variant type can be
-            # read from the device's memory, so let's just use that string
-            # to refer to the device here.
-            variant = self.comm.read_config_memory(0xd0, 14).rstrip(b"\xff").decode()
-            if variant:
-                self.handle = variant
-
-            fw = self.comm.get_firmware_version()
+            self.config = config
+            # There are multiple GX1400 variants, named in config memory
+            self.handle = config.variant() or self.handle
+            fw = config.firmware_version()
             logger.info(f"Device on {self.tty} is {self.handle}, firmware version {fw}")
         else:
             logger.error(f"Device on {self.tty} does not behave or look like GX1400")

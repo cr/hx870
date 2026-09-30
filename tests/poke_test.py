@@ -95,9 +95,9 @@ def test_hxtool_peek_preset_memory(capsys, kill_sims, sim_memory):
 def test_hxtool_poke_memory_limits(capsys, kill_sims):
     # HX870: 0x40 bytes per transfer, 0x8000 bytes of memory
     assert main("--simulator -t 0 poke 0000 -l 40".split()) == 0, "a whole chunk at once"
-    assert capsys.readouterr().out == "ff" * 0x40 + "\n"
+    assert capsys.readouterr().out == "0367" + "ff" * 0x3e + "\n", "starts with the config magic"
     assert main("--simulator -t 0 poke 7fff".split()) == 0, "last byte of memory"
-    assert capsys.readouterr().out == "ff\n"
+    assert capsys.readouterr().out == "67\n", "the config magic's low byte"
 
     assert main("--simulator -t 0 poke 005a -l 41".split()) != 0, "more than a chunk"
     assert "more than 0x40 bytes" in capsys.readouterr().err

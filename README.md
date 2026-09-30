@@ -55,6 +55,15 @@ GPS logs can now be exported and erased. Supported output formats are GPX, JSON,
 `hxtool gpslog` should dump some log content to screen if radio is in programming mode.
 See `hxtool gpslog --help` for usage info.
 
+## Flashing a config image
+
+`hxtool config --flash FILE` writes an image back, but leaves the device's identity alone:
+the config magic is checked and never written, the flash ID is skipped, and so is device
+state the firmware maintains (on the HX8xx the last-turned-off timestamp and position).
+`--force` flashes despite a magic or region mismatch and writes that device state as well;
+`--force-flashid` writes the flash ID from the image. Both together write everything but
+the magic.
+
 ## Raw memory access
 
 `hxtool poke <hex offset> [<hex data>] [-l <hex length>]` reads (peek) or writes (poke)

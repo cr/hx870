@@ -60,4 +60,5 @@ addopts = "--pycodestyle --strict-markers"
 markers = [
     "slow",
     "wip",
+    "hardware: talks to real radios; the default fixture hides them",
 ]

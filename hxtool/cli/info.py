@@ -27,11 +27,10 @@ class InfoCommand(CliCommand):
             logger.warning("For firmware and config information, device must be in CP mode (MENU + ON)")
             return 0
 
-        fw = hx.comm.get_firmware_version()
-        print(f"Firmware version: {fw}")
+        print(f"Firmware version: {hx.config.firmware_version()}")
 
-        fid = hx.comm.get_flash_id()
-        if not hx.check_flash_id():
+        fid = hx.config.flash_id()
+        if not hx.config.check_flash_id():
             logger.warning(f"Flash ID mismatch. {fid} not in {hx.config.FLASH_ID}")
         print(f"Flash ID:\t{fid}")
 

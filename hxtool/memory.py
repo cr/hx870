@@ -98,17 +98,6 @@ def _pack_position(position, hemispheres: str, max_degrees: int, degree_digits: 
     return f"{degrees:0{degree_digits}d}{minutes:06d}{hemisphere}"
 
 
-region_code_map = {
-    0: "INTERNATIONAL",
-    1: "UNITED KINGDOM",
-    2: "BELGIUM",
-    3: "NETHERLAND",
-    4: "SWEDEN",
-    5: "GERMANY",
-    255: "NONE"
-}
-
-
 region_map = {
     "INTERNATIONAL": 0,
     "CANADA": 0,

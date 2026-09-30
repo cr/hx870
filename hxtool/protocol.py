@@ -284,54 +284,9 @@ class GenericHXProtocol(object):
             raise ProtocolError("Device did not acknowledge firmware version ack")
         return cvrdq.args[0]
 
-    def get_flash_id(self):
-        # For some reason my radio sometimes responds with #CMDER. It only seems to work the
-        # first time after the radio is turned on.
-        # The official flasher put the USB port into SUSPEND mode before sending the command,
-        # so that requires further investigation.
-
-        # # It normally goes like this
-        # self.send("#CMDNR", ["STANDARD HORIZON"])
-        # r = self.receive()  # expect #CMDOK
-        # if r.type != "#CMDOK":
-        #     raise ProtocolError("Device did not acknowledge flash ID request")
-        # cmdnd = self.receive()  # expect #CMDND
-        # if cmdnd.type != "#CMDND":
-        #     raise ProtocolError("Device did not reply with flash ID")
-        # cmdnd = self.receive()  # expect #CMDND
-        # if cmdnd.type != "#CMDND":
-        #     raise ProtocolError("Device did not reply with flash ID twice")
-        # self.send("#CFLID", [cmdnd.args[0]])
-        # cmdok = self.receive()  # expect #CMDOK or #CMDER
-        # if cmdok.type != "#CMDOK":
-        #     raise ProtocolError("Device did not acknowledge flash CFLID command")
-        # cflsd = self.receive()  # expect #CFLSD
-        # if cflsd.type != "#CFLSD":  # or cflsd.args[0] != "00":
-        #     raise ProtocolError("Device did not acknowledge with CFLSD")
-        # cflsd = self.receive()  # expect #CFLSD
-        # if cflsd.type != "#CFLSD":  # or cflsd.args[0] != "00":
-        #     raise ProtocolError("Device did not acknowledge with CFLSD twice")
-        # if cflsd.args[0] != "00":
-        #     raise ProtocolError("Device did not acknowledge reported flash ID with status 00")
-        # self.sync()
-        # return cmdnd.args[0]
-
-        # But this implements the check via a direct config flash read that works nonetheless:
-        return self.read_config_memory(0x100, 10).rstrip(b"\x00\xff").decode("ascii")
-
-    def check_flash_id(self, flash_id: list):
-        # This function would normally use the use the low-level implementation
-        # in get_flash_id, but the command it uses only works once after the
-        # device is turned on.
-        # Hence this function uses the more reliable method of reading the flash ID
-        # directly from its offset in config memory.
-        fid = self.get_flash_id()
-        if fid in flash_id:
-            logger.debug("Device reported expected flash ID %s", fid)
-            return True
-        else:
-            logger.debug(f"Flash ID mismatch. Device reported {fid}, expected {flash_id}")
-            return False
+    # The flash ID could be requested with #CMDNR / #CFLID, but that only works once
+    # after the radio is turned on (the official flasher suspends the USB port first),
+    # so the flash ID is read from config memory instead, see GenericHXConfig.flash_id()
 
     def wait_for_ready(self, timeout=1):
         timeout_time = time() + timeout
@@ -596,15 +551,6 @@ class GX1400Protocol(GenericHXProtocol):
         # too difficult. But given that NMEA data comes in from the GX1400 over
         # a regular serial link rather than USB, dedicated NMEA software is
         # probably more suited than hxtool for reading it anyway.
-
-    def get_firmware_version(self):
-        self.sync()
-        data = hexlify(self.read_config_memory(0x1d, 3)).decode()
-        return (data[1] if data.startswith("0") else data[0:2]) + "." + data[2:4]
-
-    def get_flash_id(self):
-        self.sync()
-        return self.read_config_memory(0x98, 7).rstrip(b"\x00\xff").decode("ascii")
 
 
 class ReadMagicProtocol(GenericHXProtocol):

@@ -95,7 +95,8 @@ def test_simulator_instance(kill_sims):
     with pytest.raises(OSError):
         ser_a.write(b"#CMDSY\r\n")
 
-    # Dump NMEA sentences from sim_n which should have sent several by now
+    # Dump NMEA sentences from sim_n, which sends one every 30 ms
+    sleep(0.1)
     assert ser_n.in_waiting > 0
     while ser_n.in_waiting > 0:
         assert ser_n.readline().startswith(b"$G")

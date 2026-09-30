@@ -203,7 +203,7 @@ def test_hx870_config(sim_870_config):
     data = bytearray(sim_870_config.config_read())
     data[0x00b0:0x00b5] = unhexlify("9793485160")  # MMSI
     data[0x010f] = 0xff  # region mismatch (will be ignored)
-    sim_870_config.config_write(data, check_region=False)
+    sim_870_config.config_write(data, force=True)
     assert sim_870_config.read_mmsi()[0] == "979348516"
     assert sim_870_config.read_region()[1] == 0xff
 
