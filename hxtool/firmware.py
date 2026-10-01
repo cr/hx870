@@ -107,6 +107,12 @@ class GenericHXFirmware(GenericHXFlashArea):
                 if segment.address < start or segment.address + len(segment.data) > end]
 
     @staticmethod
+    def _gaps(flash: Image) -> str:
+        """Where an image has gaps, its size as a flat file, which is the other number people see"""
+        flat = len(flash.to_binary())
+        return f" ({flat} bytes from the first to the last, the gaps being erased flash)" if flat != flash.size else ""
+
+    @staticmethod
     def _span(segment: Segment) -> str:
         return f"0x{segment.address:06x}..0x{segment.address + len(segment.data) - 1:06x}"
 
@@ -158,7 +164,7 @@ class GenericHXFirmware(GenericHXFlashArea):
         return [
             ImageCheck("area", not outside,
                        f"{self._span(outside[0])} lies outside {area}" if outside
-                       else f"{flash.size} bytes, within {area}"),
+                       else f"{flash.size} bytes of data{self._gaps(flash)}, within {area}"),
             ImageCheck("version", version.replace(".", "").isdigit() and "." in version,
                        f"image version {version!r}" if version else "no version string at the start of the area"),
             ImageCheck("model", bool(in_header or in_data),

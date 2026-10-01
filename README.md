@@ -84,8 +84,16 @@ gets a warning not to write it, and a non-zero exit status.
 
 With `--really` the assessment is only advice: the flash is erased and the image written,
 whatever the assessment said. The one thing `--really` cannot do is write an image that
-leaves the firmware area. Writing follows the vendor's updater step by step but has not
-been run against a radio yet.
+leaves the firmware area. Writing follows the vendor's updater step by step. It has run on
+an HX870: 02.03 written over 02.04 in two and a half minutes (three seconds for the erase,
+31 ms a chunk), read back identical, and the radio restarted into it. No other model has
+been written. A careful write leaves `--reboot` out, reads the firmware
+back (`--readto`, the radio is still in flash mode) and compares it with the image before
+`hxtool firmware --reboot`: as long as the radio is in flash mode, a write can be repeated.
+
+The assessment's `area` line gives the bytes of data the image holds and, where the image
+has gaps, the bytes from its first to its last: that is the size of the same image as a
+flat binary, in which the gaps are filled with 0xFF, erased flash.
 
 A read or write leaves the radio in flash mode. There it answers the firmware commands and
 nothing else: no config access, no GPS, and no answer to the `?` that tells CP mode. hxtool
@@ -377,8 +385,9 @@ Radio starts repeating messages if you don't acknowledge with #CMDOK or similar,
 ### Firmware update sequence
 
 Read from the vendor's updater for the HX870 (a .NET program, versions 02.03 and 02.04).
-Steps 2 to 4 and the read are verified on an HX870 with firmware 02.04 (`hxtool firmware
---readto`); the erase and write steps are not.
+All steps are verified on an HX870 (`hxtool firmware --readto` and `--writefrom --really`):
+the handshake and the read with firmware 02.04, erase, blank check and write by flashing
+02.03 over it.
 
 1. `P`, `0`, `ACMD:002`, `#CVRRQ` to show the installed version.
 2. `#CMDNR STANDARD HORIZON`, answered with `#CMDOK` and `#CMDND <flash ID>`: the radio names
@@ -402,10 +411,16 @@ whole area, erased chunks included.
 The radio acknowledges an erase, a blank check and a write when the flash operation is
 done, with `#CMDOK` and `#CFLSD <status>` together.
 
-hxtool follows this sequence, with two differences. It offers the flash ID the radio has
-just named in `#CMDND`, the one the radio accepts, instead of a list of its own. And it
-acknowledges every `#CFLSD` with `#CMDOK`, like any data reply; the updater only does so
-after `#CFLSR`, and the radio repeats the others. A status other than `00` after `#CFLID`,
+hxtool follows this sequence. In the handshake it offers the flash ID the radio has just
+named in `#CMDND`, the one the radio accepts, instead of a list of its own, and it
+acknowledges the statuses after `#CFLID` and `#CFLMC 01` with `#CMDOK`, which the updater
+does not and the radios take. From the erase on it sends what the updater sends and
+nothing else: for the HX870's 02.03 image every `#CFLWR` is byte for byte the one in the
+USB capture of the vendor's update, in the same order, with the same status requests
+between them and without acknowledging the statuses of erase, blank check and write. The
+one difference is that chunks holding nothing but erased flash are not written (834 of
+5632 for 02.03), as the HX890 updater leaves them out too. The radio repeats a status that
+is not acknowledged; hxtool drops such a repeat. A status other than `00` after `#CFLID`,
 `#CFLMC 01`, an erase, a blank check or a write is an error.
 
 The updater for the HX890 (version 02.00) is a different, native program. It sends the same

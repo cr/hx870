@@ -38,8 +38,7 @@ class FirmwareCommand(CliCommand):
                                 metavar="FILE",
                                 action="store")
             parser.add_argument("--really",
-                                help="write the --writefrom image to the handset, whatever the assessment says "
-                                     "(writing is untested on a radio so far)",
+                                help="write the --writefrom image to the handset, whatever the assessment says",
                                 action="store_true")
 
         parser.add_argument("--binary",
@@ -145,7 +144,7 @@ class FirmwareCommand(CliCommand):
 
         if not fit:
             logger.warning("Image failed the assessment, writing it regardless")
-        logger.warning("Writing firmware to handset (untested on a radio so far)")
+        logger.warning("Writing firmware to handset")
         with ui.progress("Writing firmware", "bytes") as progress:
             hx.firmware.write_image(image, progress=progress)
         return 0

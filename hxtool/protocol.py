@@ -338,13 +338,14 @@ class GenericHXProtocol:
                 logger.debug("Device failed to sync, giving up")
                 raise ProtocolError("Device failed to sync")
 
-    def request(self, message_type, args=None, reply_type=None, terminator=False, timeout=None):
+    def request(self, message_type, args=None, reply_type=None, terminator=False, timeout=None, ack=True):
         """
         One exchange, in the pattern of every # request: the device acknowledges with #CMDOK,
         sends its data reply if the command has one (reply_type), and that reply is
         acknowledged back, or the device repeats it. Returns the data reply, or None.
         terminator: the vendor's firmware updater follows some commands with a ';' byte.
         timeout: seconds to wait for the acknowledgement, instead of the transport's.
+        ack: acknowledge the data reply; the updater leaves some unacknowledged.
         """
         self.write(bytes(Message(message_type, args)) + (b";" if terminator else b""))
         if timeout is not None:
@@ -363,7 +364,8 @@ class GenericHXProtocol:
         d = self.receive()
         if d.type != reply_type:
             raise ProtocolError(f"Unexpected reply to {message_type}: {str(d).strip()}")
-        self.send("#CMDOK")
+        if ack:
+            self.send("#CMDOK")
         return d
 
     def get_firmware_version(self):
@@ -650,7 +652,8 @@ class FirmwareProtocol:
 
     Read on an HX870 with firmware 02.04 and an HX891BT with firmware 1.00: handshake,
     #CFLRR / #CFLRD (the counterpart of #CFLWR that the updater builds but never sends) and
-    reboot. Erase and write follow the updater and have not been run against a radio.
+    reboot. Erase, blank check and write have run on an HX870: 02.03 written over 02.04,
+    read back identical, restarted into it.
     """
 
     # The updater pauses a second around the mode changes and polls the flash status
@@ -684,19 +687,27 @@ class FirmwareProtocol:
         self.p = proto         # its flash_mode says whether the radio is in flash mode
         self.flash_id = None   # the flash ID the radio named itself by in the handshake
 
-    def _status_of(self, message_type, args, terminator=False, timeout=None) -> str:
+    def _request(self, message_type, args=None, reply_type=None, **how):
+        """
+        A request of the flash session. Whatever still waits to be read before it is the
+        radio repeating a status that was left unacknowledged, and is dropped.
+        """
+        self.p.conn.flush_input(expected=True)
+        return self.p.request(message_type, args, reply_type, **how)
+
+    def _status_of(self, message_type, args, terminator=False, timeout=None, ack=True) -> str:
         """
         A command the radio answers with the flash status (#CFLSD) when it is done.
         Returns the status byte as two hex digits; '00' is ready.
         """
-        d = self.p.request(message_type, args, "#CFLSD", terminator=terminator, timeout=timeout)
+        d = self._request(message_type, args, "#CFLSD", terminator=terminator, timeout=timeout, ack=ack)
         if not d.args:
             raise ProtocolError(f"Flash status without a value: {str(d).strip()}")
         return d.args[0]
 
-    def _done(self, message_type, args, terminator=False, timeout=None):
+    def _done(self, message_type, args, terminator=False, timeout=None, ack=True):
         """A command that has failed unless the flash status it is answered with is ready"""
-        flash_status = self._status_of(message_type, args, terminator, timeout)
+        flash_status = self._status_of(message_type, args, terminator, timeout, ack)
         if flash_status != "00":
             raise ProtocolError(f"{message_type} failed, flash status {flash_status} "
                                 f"({self.describe_status(flash_status)})")
@@ -719,7 +730,7 @@ class FirmwareProtocol:
         logger.debug("Entering firmware flash mode")
         # The updater names itself and offers the flash IDs of its model in turn. The radio
         # answers with its own ID, which is the one it accepts, so that one is offered.
-        named = self.p.request("#CMDNR", ["STANDARD HORIZON"], "#CMDND", terminator=True)
+        named = self._request("#CMDNR", ["STANDARD HORIZON"], "#CMDND", terminator=True)
         if not named.args:
             raise ProtocolError(f"Radio did not name its flash ID: {str(named).strip()}")
         self.flash_id = named.args[0]
@@ -741,7 +752,7 @@ class FirmwareProtocol:
         """
         self.enter_flash_mode()
         sleep(self.MODE_SETTLE)
-        self.p.request("#CFLMC", ["03"], terminator=True)
+        self._request("#CFLMC", ["03"], terminator=True)
         self.p.flash_mode = False
 
     def poweroff(self):
@@ -777,20 +788,25 @@ class FirmwareProtocol:
     def read(self, offset: int, length: int) -> bytes:
         """One #CFLRR / #CFLRD transfer"""
         _check_transfer("Firmware flash", offset, length, self.MAX_OFFSET, self.MAX_TRANSFER)
-        d = self.p.request("#CFLRR", [f"{offset:06X}", f"{length:02X}"], "#CFLRD")
+        d = self._request("#CFLRR", [f"{offset:06X}", f"{length:02X}"], "#CFLRD")
         return _transfer_data(d, offset, length)
+
+    # Erase, blank check and write send what the updater sends and nothing else: the updater
+    # does not acknowledge their status but goes on with the next command, and the bytes of
+    # its HX870 update are known to work (USB capture). The statuses of the handshake and of
+    # the status request are acknowledged, which the radios are seen to take.
 
     def write(self, offset: int, data: bytes):
         """One #CFLWR transfer, after the status poll the updater makes before each"""
         _check_transfer("Firmware flash", offset, len(data), self.MAX_OFFSET, self.MAX_TRANSFER)
         self.wait_for_ready()
-        self._done("#CFLWR", [f"{offset:06X}", f"{len(data):02X}", data.hex().upper()], timeout=self.WRITE_TIMEOUT)
+        self._done("#CFLWR", [f"{offset:06X}", f"{len(data):02X}", data.hex().upper()],
+                   timeout=self.WRITE_TIMEOUT, ack=False)
 
     def erase(self):
         """Erase the firmware area and check it is blank, as the updater does before writing"""
-        self._done("#CFLER", ["000000"], terminator=True, timeout=self.ERASE_TIMEOUT)
-        self._done("#CFLCB", ["000000"], terminator=True, timeout=self.BLANK_CHECK_TIMEOUT)
-        self.wait_for_ready()
+        self._done("#CFLER", ["000000"], terminator=True, timeout=self.ERASE_TIMEOUT, ack=False)
+        self._done("#CFLCB", ["000000"], terminator=True, timeout=self.BLANK_CHECK_TIMEOUT, ack=False)
 
 
 class GX1400Protocol(GenericHXProtocol):

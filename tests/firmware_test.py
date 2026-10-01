@@ -147,6 +147,39 @@ def test_erase_outlasts_the_transport_timeout(cp_sim, monkeypatch):
     assert cp_sim.received["#CFLER"] == 1 and cp_sim.received["#CFLCB"] == 1
 
 
+def test_erase_and_write_send_what_the_updater_sends(cp_sim, monkeypatch):
+    # The order of the vendor's HX870 update in the USB capture: the status after an erase, a blank
+    # check and a write is not acknowledged, the one after the status request is
+    flash = flash_of(cp_sim)
+    flash.enter_flash_mode()
+    sent = []
+    write = GenericHXProtocol.write
+    monkeypatch.setattr(GenericHXProtocol, "write", lambda self, data: (sent.append(bytes(data)), write(self, data))[1])
+
+    flash.erase()
+    flash.write(AREA[0], b"\x12" * 0x80)
+    flash.write(AREA[0] + 0x80, b"\x34" * 0x80)
+    assert [message.split(b"\t")[0].strip(b"\r\n;") for message in sent] == [
+        b"#CFLER", b"#CFLCB", b"#CFLSR", b"#CMDOK", b"#CFLWR", b"#CFLSR", b"#CMDOK", b"#CFLWR"]
+    assert sent[0] == b"#CFLER\t000000\t7D\r\n;" and sent[1] == b"#CFLCB\t000000\t6B\r\n;"
+    assert sent[4].startswith(b"#CFLWR\tF40000\t80\t" + b"12" * 0x80 + b"\t") and sent[4].endswith(b"\r\n")
+
+
+def test_repeated_status_is_dropped(cp_sim):
+    # The radio repeats a status that was not acknowledged; it must not be taken for the next answer
+    flash = flash_of(cp_sim)
+    flash.enter_flash_mode()
+    flash.erase()
+    flash.write(AREA[0], b"\x12" * 0x80)
+    cp_sim._reply("#CFLSD", ["00"])
+    sleep(0.1)
+    assert flash.read(AREA[0], 0x80) == b"\x12" * 0x80
+    cp_sim._reply("#CFLSD", ["00"])
+    sleep(0.1)
+    flash.reboot()
+    assert cp_sim.rebooted
+
+
 def test_flash_status_bits_are_named():
     assert FirmwareProtocol.describe_status("00") == "ready"
     assert FirmwareProtocol.describe_status("80") == "busy"
@@ -262,7 +295,7 @@ def test_image_checks(cp_sim):
 
     checks = {c.what: c for c in fw.check_image(fw.image_from_binary(GOOD_IMAGE))}
     assert all(c.passed for c in checks.values()), checks
-    assert "504 bytes" in checks["area"].detail and "02.04" in checks["version"].detail
+    assert "504 bytes of data, within" in checks["area"].detail and "02.04" in checks["version"].detail
     assert "AM057N" in checks["model"].detail
 
     passed = {c.what: c.passed for c in fw.check_image(flat(b"  01.00    " + b"AM070N" + bytes(0x100)))}
@@ -273,6 +306,14 @@ def test_image_checks(cp_sim):
     assert {c.what: c.passed for c in fw.check_image(flat(b"\xff" * 0x200))}["content"] is False
     assert {c.what: c.passed for c in fw.check_image(Image())}["content"] is False
     assert cp_sim.received["#CMDNR"] == 0, "checking an image sends nothing to the radio"
+
+
+def test_image_check_gives_both_sizes_of_an_image_with_gaps(cp_sim):
+    # The data the records hold, and the size of the same image as a flat file
+    fw = firmware_of(cp_sim)
+    image = Image([Segment(MCU_START, b"  02.04    AM057N"), Segment(MCU_START + 0x100, bytes(0x10))])
+    area = {c.what: c for c in fw.check_image(image)}["area"]
+    assert area.passed and "33 bytes of data (272 bytes from the first to the last" in area.detail
 
 
 def test_image_checks_read_the_header_record(cp_sim):
