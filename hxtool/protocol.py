@@ -185,6 +185,7 @@ class GenericHXProtocol:
         self.hx_hardware = False
         self.cp_mode = False
         self.nmea_mode = False
+        self.flash_mode = False  # firmware flash mode, entered from CP mode, see FirmwareProtocol
         self.nmea_output_seen = False
         self._connect(tty)
 
@@ -203,10 +204,14 @@ class GenericHXProtocol:
             self.sync()
         if self.nmea_mode:
             logger.debug("Device is in NMEA mode")
+        if self.flash_mode:
+            logger.debug("Device is in firmware flash mode")
 
     def _detect_device_mode(self):
 
         # In CP mode, an HX device replies with "@" to "?" and ignores "P".
+        # In firmware flash mode, which outlasts the connection that entered it, it ignores
+        # both and answers the flash status request.
         # In NMEA mode, some firmware replies with "P" to "P" (seen on HX891BT),
         # some ignores it (seen on HX870). Either way the GPS module sends NMEA
         # sentences, unless GPS output is disabled or the module is asleep
@@ -244,6 +249,9 @@ class GenericHXProtocol:
             self.hx_hardware, self.cp_mode, self.nmea_mode = True, False, True
             self.nmea_output_seen = True
             self.conn.flush_input(expected=True)
+        elif not received and self._answers_flash_status():
+            logger.debug("Response like HX hardware in firmware flash mode")
+            self.hx_hardware, self.flash_mode = True, True
         elif not received and self.identified:
             logger.info("No response to handshake, assuming NMEA mode with GPS output off or asleep")
             self.hx_hardware, self.cp_mode, self.nmea_mode = True, False, True
@@ -251,6 +259,13 @@ class GenericHXProtocol:
             logger.warning("No response, so probably not talking to HX hardware")
         else:
             logger.warning(f"Unexpected response {received!r}, so probably not talking to HX hardware")
+
+    def _answers_flash_status(self) -> bool:
+        try:
+            self.request("#CFLSR", ["00"], "#CFLSD", timeout=0.5)
+        except (TimeoutError, ProtocolError):
+            return False
+        return True
 
     def available(self):
         return self.conn.available()
@@ -326,12 +341,14 @@ class GenericHXProtocol:
         sends its data reply if the command has one (reply_type), and that reply is
         acknowledged back, or the device repeats it. Returns the data reply, or None.
         terminator: the vendor's firmware updater follows some commands with a ';' byte.
-        timeout: seconds to wait for the acknowledgement, if longer than the transport's.
+        timeout: seconds to wait for the acknowledgement, instead of the transport's.
         """
         self.write(bytes(Message(message_type, args)) + (b";" if terminator else b""))
         if timeout is not None:
             deadline = time() + timeout
-            while not self.available() and time() < deadline:
+            while not self.available():
+                if time() >= deadline:
+                    raise TimeoutError(f"No answer to {message_type}")
                 sleep(0.01)
         r = self.receive()
         if r.type == "#CMDUN":
@@ -624,8 +641,9 @@ class FirmwareProtocol:
     is the model's knowledge, see hxtool.firmware.
 
     The radio is put into flash mode by a handshake (#CMDNR, #CFLID, #CFLMC 01) that it
-    grants once per power-on. Flash mode outlasts the connection and is left by reboot()
-    (#CFLMC 03) or poweroff() (#CFLMC 02); the radio then is no longer in CP mode.
+    grants once per power-on. Flash mode outlasts the connection (a new connection finds
+    the radio in it, without the flash ID) and is left by reboot() (#CFLMC 03) or
+    poweroff() (#CFLMC 02); the radio then is no longer in CP mode.
 
     Read on an HX870 with firmware 02.04 and an HX891BT with firmware 1.00: handshake,
     #CFLRR / #CFLRD (the counterpart of #CFLWR that the updater builds but never sends) and
@@ -660,8 +678,7 @@ class FirmwareProtocol:
     }
 
     def __init__(self, proto: GenericHXProtocol):
-        self.p = proto
-        self.active = False    # the radio is in flash mode
+        self.p = proto         # its flash_mode says whether the radio is in flash mode
         self.flash_id = None   # the flash ID the radio named itself by in the handshake
 
     def _status_of(self, message_type, args, terminator=False, timeout=None) -> str:
@@ -694,7 +711,7 @@ class FirmwareProtocol:
 
     def enter_flash_mode(self):
         """Put the radio into flash mode, unless it is already. Possible once per power-on."""
-        if self.active:
+        if self.p.flash_mode:
             return
         logger.debug("Entering firmware flash mode")
         # The updater names itself and offers the flash IDs of its model in turn. The radio
@@ -710,7 +727,7 @@ class FirmwareProtocol:
         self._done("#CFLID", [self.flash_id.ljust(10, "\x00")], terminator=True)
         sleep(self.MODE_SETTLE)
         self._done("#CFLMC", ["01"], terminator=True)
-        self.active = True
+        self.p.flash_mode = True
         self.p.sync()
         self.p.sync()
 
@@ -722,7 +739,7 @@ class FirmwareProtocol:
         self.enter_flash_mode()
         sleep(self.MODE_SETTLE)
         self.p.request("#CFLMC", ["03"], terminator=True)
-        self.active = False
+        self.p.flash_mode = False
 
     def poweroff(self):
         """
@@ -732,7 +749,7 @@ class FirmwareProtocol:
         self.enter_flash_mode()
         sleep(self.MODE_SETTLE)
         self.p.write(bytes(Message("#CFLMC", ["02"])) + b";")
-        self.active = False
+        self.p.flash_mode = False
 
     # Transfers, in flash mode
 

@@ -88,11 +88,17 @@ leaves the firmware area. Writing follows the vendor's updater step by step but 
 been run against a radio yet.
 
 A read or write leaves the radio in flash mode. There it answers the firmware commands and
-nothing else: no config access, no GPS, and no answer to the `?` that tells CP mode, so
-hxtool takes a radio left in flash mode for one in NMEA mode. `--reboot` restarts the radio
+nothing else: no config access, no GPS, and no answer to the `?` that tells CP mode. hxtool
+tells a radio left in flash mode by its answer to the flash status request, so a later
+`hxtool firmware` run carries on with it; the other commands say it is not in CP mode.
+`--reboot` restarts the radio
 when the command went through (on its own: `hxtool firmware --reboot`), after which it is in
-its normal mode, not CP mode. After a failure the radio is left as it is. Without `--reboot`,
-switch the radio off and on.
+its normal mode, not CP mode. After a failure the radio is left as it is. The known ways out
+of flash mode are that restart (`#CFLMC 03`) and switching the radio off by `#CFLMC 02`
+(`hx.poweroff()` in the library); whether the power key works in flash mode has not been
+tried. Nothing is known that leads back to CP mode without a restart. An image read from a
+radio found in flash mode has no flash ID in its header: the radio names it only in the
+handshake.
 
 The file is in Motorola S-records, the form the vendor's updaters hold their images in,
 whatever its name. S-records carry the address of every byte, so the image itself says
@@ -128,8 +134,9 @@ an `hxtool.srec.Image`: address segments, read from and written to S-records or 
 The radio grants the flash-mode handshake once per power-on; the session enters flash mode
 when a transfer needs it and stays there, so a write and a read back fit into one session.
 Flash mode outlasts the connection: on an HX870 and an HX891BT a second connection read the
-whole area again without a handshake (a `FirmwareProtocol` made with `active = True`),
-identical to the first read.
+whole area again without a handshake, identical to the first read. A connection finds the
+radio in flash mode by itself (`hx.comm.flash_mode`); the model instance then has the
+firmware handler and no config or GPS handler.
 `hx.reboot()` ends flash mode by restarting the radio, and `hx.poweroff()` by switching it
 off; both enter flash mode first if need be, and they are the known ways to restart or
 switch off a radio in CP mode by software. `tools/fwextract.py` extracts the images from a

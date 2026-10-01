@@ -196,6 +196,10 @@ class HX870:
                 self.nmea = self.nmea_model(self.comm)
                 self.gps = self.gps_model(self.comm)
                 logger.info(f"Device on {self.tty} is {self.handle} in NMEA mode")
+            elif self.comm.flash_mode:
+                # Left there by an earlier connection: it takes the firmware commands only
+                self.firmware = self.firmware_model(FirmwareProtocol(self.comm), self.config_model.FLASH_ID)
+                logger.info(f"Device on {self.tty} is {self.handle} in firmware flash mode")
             elif not self.comm.cp_mode and not self.comm.nmea_mode:
                 self.config = None
                 self.nmea = None
@@ -241,7 +245,8 @@ class HX870:
             yield Candidate(sim_cls, sim.tty, identified=True)
 
     def __str__(self):
-        return f"{self.brand} {self.handle} on `{self.tty} [{'CP Mode' if self.comm.cp_mode else 'NMEA Mode'}]`"
+        mode = "CP Mode" if self.comm.cp_mode else "Flash Mode" if self.comm.flash_mode else "NMEA Mode"
+        return f"{self.brand} {self.handle} on `{self.tty} [{mode}]`"
 
 
 class HX890(HX870):

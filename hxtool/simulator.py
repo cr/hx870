@@ -122,7 +122,11 @@ class HXSimulator(Thread):
         self.firmware = {}
         self.flash_status = "00"  # what the flash operations report; for tests
         self._flash_mode = False
-        self.powered_off = False  # #CFLMC 02 switches the radio off
+        # In flash mode the radio is silent to "?" and knows the flash commands and #CMDSY
+        # only. #CFLMC 02 switches it off, #CFLMC 03 restarts it into its normal mode: either
+        # way it has left CP mode and says nothing more.
+        self.powered_off = False
+        self.rebooted = False
         self._named = False  # the HX870 answers #CMDNR once per power-on
 
     def run(self):
@@ -224,7 +228,7 @@ class HXSimulator(Thread):
                 elif b == b"$":
                     # Beginning of a sentence for the GPS module
                     message = b
-                elif b == b"?":
+                elif b == b"?" and not (self._flash_mode or self.powered_off or self.rebooted):
                     # Reply with @ to ? to signal CP mode
                     logger.debug("CP simulator responding to ping")
                     write(self.master, b"@")
@@ -342,13 +346,16 @@ class HXSimulator(Thread):
 
     def _process_cp_message(self, msg):
         logger.debug(f"CP simulator processing message {msg}")
-        if self.powered_off:
+        if self.powered_off or self.rebooted:
             return
         msg = Message(parse=msg)
         if not msg.validate():
             self._reply("#CMDER")
             return
         self.received[msg.type] += 1
+        if self._flash_mode and not msg.type.startswith("#CFL") and msg.type not in ("#CMDSY", "#CMDOK"):
+            self._reply("#CMDUN")
+            return
         match msg.type, msg.args:
             case "#CMDOK", []:
                 # The host's acknowledgement of a data reply gets no answer
@@ -396,7 +403,7 @@ class HXSimulator(Thread):
                 self.powered_off = True
             case "#CFLMC", ["03"] if self._flash_mode:
                 self._flash_mode = False
-                self._named = False  # the radio reboots, which renews the grant
+                self.rebooted = True
                 self._reply("#CMDOK")
             case "#CFLSR", _:
                 self._reply_flash_status()

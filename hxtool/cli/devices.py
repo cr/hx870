@@ -22,6 +22,8 @@ class DevicesCommand(CliCommand):
                     mode = "NMEA mode" if device.comm.nmea_output_seen else "NMEA mode (no output seen)"
                 if device.comm.cp_mode:
                     mode = "CP mode"
+                if device.comm.flash_mode:
+                    mode = "firmware flash mode"
                 if not device.comm.hx_hardware:
                     mode = "unknown hardware (BE CAREFUL)"
                 print(f"[{devices.index(device)}]\t{device.tty}\t{device.brand}\t{device.model}\t{mode}")

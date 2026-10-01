@@ -50,7 +50,7 @@ class FirmwareCommand(CliCommand):
         if hx is None:
             return 10
 
-        if not hx.comm.cp_mode:
+        if not hx.comm.cp_mode and not hx.comm.flash_mode:
             logger.critical("Handset not in CP mode (MENU + ON)")
             return 11
 
@@ -70,7 +70,7 @@ class FirmwareCommand(CliCommand):
 
         if self.args.reboot and result == 0:
             hx.reboot()
-        elif hx.firmware.p.active:
+        elif hx.comm.flash_mode:
             logger.info("Handset is left in flash mode. `hxtool firmware --reboot` restarts it")
         return result
 
@@ -123,8 +123,9 @@ class FirmwareCommand(CliCommand):
         checks = hx.firmware.check_image(image)
         for check in checks:
             (logger.info if check.passed else logger.error)(f"{check.what}: {check.detail}")
-        logger.info(f"Handset runs firmware {hx.config.firmware_version().strip()!r}, "
-                    f"image is {hx.firmware.image_version(image)!r}")
+        # A handset found in flash mode does not tell its version
+        running = repr(hx.config.firmware_version().strip()) if hx.comm.cp_mode else "unknown (flash mode)"
+        logger.info(f"Handset runs firmware {running}, image is {hx.firmware.image_version(image)!r}")
         fit = all(check.passed for check in checks)
 
         if not self.args.really:

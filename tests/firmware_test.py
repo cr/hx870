@@ -51,37 +51,51 @@ def fixture_cp_simulator(kill_sims):
 def test_handshake_offers_the_flash_id_the_radio_names(cp_sim):
     flash = flash_of(cp_sim)
     flash.enter_flash_mode()
-    assert flash.active and flash.flash_id == "AM057N2"
+    assert flash.p.flash_mode and flash.flash_id == "AM057N2"
     assert cp_sim.received["#CMDNR"] == 1 and cp_sim.received["#CFLID"] == 1
 
     flash.enter_flash_mode()
     assert cp_sim.received["#CMDNR"] == 1, "flash mode is entered once"
 
 
-def test_second_handshake_without_a_reboot_is_refused(cp_sim):
-    flash_of(cp_sim).enter_flash_mode()
+def test_handshake_is_granted_once_per_power_on(cp_sim):
+    flash = flash_of(cp_sim)
+    flash.p.request("#CMDNR", ["STANDARD HORIZON"], "#CMDND", terminator=True)
     with pytest.raises(ProtocolError, match="did not acknowledge #CMDNR"):
-        flash_of(cp_sim).enter_flash_mode()
+        flash.enter_flash_mode()
+
+
+def test_new_connection_finds_the_radio_in_flash_mode(cp_sim):
+    # Flash mode outlasts the connection. The radio is silent to "P?" then, and answers the flash status request
+    flash_of(cp_sim).enter_flash_mode()
+
+    again = flash_of(cp_sim)
+    assert again.p.hx_hardware and again.p.flash_mode and not again.p.cp_mode and not again.p.nmea_mode
+    again.enter_flash_mode()
+    assert again.read(AREA[0], 0x80) == b"\xff" * 0x80
+    assert cp_sim.received["#CMDNR"] == 1, "no second handshake, which the radio would refuse"
+    with pytest.raises(ProtocolError, match="does not know the command #CVRRQ"):
+        again.p.get_firmware_version()
 
 
 def test_reboot_from_plain_cp_mode(cp_sim):
     # Leaving flash mode is what restarts the radio, so a reboot enters it first if need be
     flash = flash_of(cp_sim)
     flash.reboot()
-    assert cp_sim.received["#CFLMC"] == 2 and not flash.active and cp_sim._flash_mode is False
-    flash.reboot()
-    assert cp_sim.received["#CMDNR"] == 2, "the reboot renewed the handshake grant"
+    assert cp_sim.received["#CFLMC"] == 2 and not flash.p.flash_mode and cp_sim.rebooted
 
 
-def test_switched_off_radio_says_nothing_more(cp_sim):
-    # #CFLMC 02 is not acknowledged: the radio is gone (HX891BT: its USB port with it)
+@pytest.mark.parametrize("leave, state", [("reboot", "rebooted"), ("poweroff", "powered_off")])
+def test_radio_that_left_flash_mode_says_nothing_more(cp_sim, leave, state):
+    # #CFLMC 03 restarts the radio into its normal mode. #CFLMC 02 switches it off and is not
+    # even acknowledged (HX891BT: its USB port is gone with it)
     flash = flash_of(cp_sim)
-    flash.poweroff()
-    assert not flash.active
+    getattr(flash, leave)()
+    assert not flash.p.flash_mode
     flash.p.conn.s.timeout = 0.2
     with pytest.raises(TimeoutError):
         flash.p.sync()
-    assert cp_sim.powered_off
+    assert getattr(cp_sim, state)
 
 
 def test_read_command_absent_on_device(cp_sim, monkeypatch):
@@ -179,7 +193,7 @@ def test_write_and_read_back_in_one_session(cp_sim):
     image = bytes((i * 7) & 0xff for i in range(0x200))
 
     fw.write_image(flat(image))
-    assert fw.p.active, "flash mode stays on between transfers"
+    assert fw.p.p.flash_mode, "flash mode stays on between transfers"
     assert fw.read_image().to_binary() == image
     assert cp_sim.received["#CMDNR"] == 1, "the handshake is granted once per power-on, and needed once"
 
@@ -236,7 +250,7 @@ def test_image_outside_the_area_is_refused_before_flash_mode(cp_sim, segment):
     fw = firmware_of(cp_sim)
     with pytest.raises(ProtocolError, match="outside the firmware area"):
         fw.write_image(Image([Segment(MCU_START, b"\x01"), segment]))
-    assert not fw.p.active and cp_sim.received["#CMDNR"] == 0
+    assert not fw.p.p.flash_mode and cp_sim.received["#CMDNR"] == 0
 
 
 def test_image_checks(cp_sim):
@@ -283,7 +297,7 @@ def test_model_poweroff_logs_its_own_line(cp_sim, caplog):
         hx.poweroff()
     assert f"Switching off HX870 on {cp_sim.tty}" in caplog.text
     sleep(0.2)  # the command is not answered, so give the simulator a moment to take it
-    assert cp_sim.received["#CFLMC"] == 2 and cp_sim.powered_off and not hx.firmware.p.active
+    assert cp_sim.received["#CFLMC"] == 2 and cp_sim.powered_off and not hx.comm.flash_mode
 
 
 @pytest.mark.parametrize("model, config_model", [(device.HX890, config.HX890Config),
@@ -298,6 +312,17 @@ def test_hx890_family_flash_session(model, config_model, kill_sims):
     assert hx.firmware.read_image().to_binary() == image
     hx.reboot()
     assert sim._flash_mode is False
+
+
+def test_model_found_in_flash_mode_has_the_firmware_handler_only(cp_sim, caplog):
+    flash_of(cp_sim).enter_flash_mode()
+    with caplog.at_level(logging.INFO):
+        hx = device.HX870(cp_sim.tty, identified=True)
+    assert f"Device on {cp_sim.tty} is HX870 in firmware flash mode" in caplog.text
+    assert hx.config is None and hx.gps is None and "Flash Mode" in str(hx)
+    assert hx.firmware.read_image().to_binary() == b"\xff" * 0x200
+    hx.reboot()
+    assert cp_sim.rebooted and cp_sim.received["#CMDNR"] == 1
 
 
 def test_model_without_a_firmware_handler_cannot_reboot(cp_sim):
@@ -336,6 +361,38 @@ def fixture_flashed_simulators(monkeypatch, sims):
         sim_start(self)
 
     monkeypatch.setattr(HXSimulator, "start", flash_and_start)
+
+
+@pytest.fixture(name="keep_sims")
+def fixture_simulators_outlast_a_cli_run(monkeypatch):
+    """A CLI run stops the simulators when it ends; a radio stays as it is"""
+    monkeypatch.setattr("hxtool.main.at_exit", lambda: None)
+
+
+def test_cli_second_run_carries_on_in_flash_mode(tmp_path, cp_sim, keep_sims, capsys):
+    cp_sim.firmware = {AREA[0] + i: byte for i, byte in enumerate(GOOD_IMAGE)}
+    binary, srec = tmp_path / "fw.bin", tmp_path / "fw.srec"
+    firmware = ["-t", cp_sim.tty, "-m", "HX870", "firmware"]
+
+    assert main(firmware + ["--readto", str(binary), "--binary"]) == 0
+    assert "left in flash mode" in capsys.readouterr().err
+    assert main(firmware + ["--writefrom", str(binary), "--binary"]) == 0, "an assessment, the version unknown"
+    log = capsys.readouterr().err
+    assert "in firmware flash mode" in log and "runs firmware unknown (flash mode)" in log
+    assert main(firmware + ["--readto", str(srec), "--reboot"]) == 0
+    log = capsys.readouterr().err
+    assert "in firmware flash mode" in log and "Rebooting HX870" in log
+
+    assert binary.read_bytes() == GOOD_IMAGE + b"\xff" * 8
+    assert Image.from_srec(srec.read_bytes()).segments == [Segment(MCU_START, binary.read_bytes())]
+    assert cp_sim.received["#CMDNR"] == 1 and cp_sim.rebooted
+
+
+def test_cli_other_commands_say_a_radio_in_flash_mode_is_not_in_cp_mode(cp_sim, keep_sims, capsys):
+    flash_of(cp_sim).enter_flash_mode()
+    assert main(["-t", cp_sim.tty, "-m", "HX870", "config", "--dump", "/dev/null"]) != 0
+    log = capsys.readouterr().err
+    assert "in firmware flash mode" in log and "not in CP mode" in log
 
 
 def srec_file(tmp_path, data: bytes, header: str = ""):
