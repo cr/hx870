@@ -9,17 +9,24 @@ class GenericHXTTY:
     Serial communication for Standard Horizon HX maritime radios
     """
 
-    def __init__(self, tty, timeout=2, baudrate=9600):
+    def __init__(self, tty, timeout=2, baudrate=9600, control_lines=True):
         """
         Serial connection class for HX870 handsets
 
         :param tty: str TTY device to use
         :param timeout: float default timeout for serial
+        :param baudrate: int line speed (nominal for USB devices)
+        :param control_lines: bool whether DTR and RTS are asserted while the port is open
         """
         self.tty = tty
-        logger.debug(f"Connecting to {tty}")
+        logger.debug(f"Connecting to {tty} at {baudrate} baud, DTR/RTS {'asserted' if control_lines else 'low'}")
         self.default_timeout = timeout
-        self.s = Serial(tty, baudrate, timeout=timeout)
+        self.s = Serial(baudrate=baudrate, timeout=timeout)
+        self.s.port = tty
+        # Set before opening, so that the lines are in the wanted state from the start
+        self.s.dtr = control_lines
+        self.s.rts = control_lines
+        self.s.open()
         self.s.reset_input_buffer()
         self.s.reset_output_buffer()
 

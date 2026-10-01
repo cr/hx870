@@ -12,9 +12,13 @@ FLASH_ID_RANGE = {
     config.HX890Config: (0x0100, 0x010f),
     config.GX1400Config: (0x0098, 0x009f),
 }
+# For the HX models: what the vendor tool leaves alone (channel group model names, a block of
+# the preset list page), plus the last turned off block, which hxtool skips on its own account
+HX_PROTECTED = [(0x000f, 0x0010), (0x0078, 0x0080), (0x0088, 0x0090), (0x0098, 0x00a0), (0x00a8, 0x00b0),
+                (0x0110, 0x0120), (0x0280, 0x0300)]
 OTHER_PROTECTED = {
-    config.HX870Config: [(0x000f, 0x0010), (0x0110, 0x0120)],
-    config.HX890Config: [(0x000f, 0x0010), (0x0110, 0x0120)],
+    config.HX870Config: HX_PROTECTED,
+    config.HX890Config: HX_PROTECTED,
     # Firmware version, unknown block, last turned off fix, serial and production date, tail padding
     config.GX1400Config: [(0x001d, 0x0020), (0x00a0, 0x00d0), (0x0110, 0x0120), (0x1fa0, 0x2000)],
 }

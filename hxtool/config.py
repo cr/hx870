@@ -49,9 +49,16 @@ class GenericHXConfig:
     # Ranges (start, end) a config write leaves alone unless forced: device
     # identity and state that the firmware maintains. The magic at both ends
     # and the flash ID range are protected separately.
+    # The vendor tool leaves the same ranges alone (USB capture of its HX870 config
+    # write), except for the last turned off block, which it writes.
     PROTECTED_RANGES = [
         (0x000f, 0x0010),  # always 0x00
+        (0x0078, 0x0080),  # model name of channel group 1
+        (0x0088, 0x0090),  # model name of channel group 2
+        (0x0098, 0x00a0),  # model name of channel group 3
+        (0x00a8, 0x00b0),  # model name of channel group 4
         (0x0110, 0x0120),  # radio last turned off: timestamp and position
+        (0x0280, 0x0300),  # unknown, in the preset list page
     ]
 
     REGION_CODE_US = 0xff

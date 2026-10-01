@@ -134,6 +134,19 @@ def _is_text(data: bytes) -> bool:
 
 class GenericHXProtocol:
 
+    # Line settings of the vendor tool, from USB captures of its sessions: it sets
+    # 115200 baud and never asserts DTR. The rate is nominal on a USB CDC link, but
+    # the radio has none until the host sets one.
+    baudrate = 115200
+    control_lines = False
+
+    # The vendor tool asks for the radio's status before every read and write. The USB
+    # radios answer reads correctly without that (HX870 firmware 02.04 and HX891BT
+    # firmware 1.00, whole dumps compared), at twice the speed. A write and the first
+    # read after one still wait for the radio to be ready.
+    poll_before_read = False
+    _written = False  # a write happened since the last status poll
+
     def __init__(self, tty=None, identified=False):
         """
         identified: the port is known to belong to an HX radio (USB metadata, or the
@@ -150,7 +163,7 @@ class GenericHXProtocol:
         self._connect(tty)
 
     def _connect(self, tty):
-        self.conn = hxtty.GenericHXTTY(tty)
+        self.conn = hxtty.GenericHXTTY(tty, baudrate=self.baudrate, control_lines=self.control_lines)
         self._detect_device_mode()
         self.connected = True
         if self.hx_hardware:
@@ -303,7 +316,10 @@ class GenericHXProtocol:
         if radio_status != "00":
             raise TimeoutError("Device not ready")
 
-    # The address and length fields of config memory transfers are two and one byte wide
+    # The address and length fields of config memory transfers are two and one byte wide.
+    # That is the wire format's limit; the radios' own is lower: an HX870 returns garbled
+    # data for reads longer than 0x40 bytes (its reply buffer wraps), which is why the
+    # models' CHUNK_SIZE, the vendor tool's transfer size, is what transfers should use.
     MAX_TRANSFER = 0xff
 
     def _check_transfer(self, offset, length):
@@ -314,7 +330,9 @@ class GenericHXProtocol:
 
     def read_config_memory(self, offset, length):
         self._check_transfer(offset, length)
-        self.wait_for_ready()
+        if self.poll_before_read or self._written:
+            self.wait_for_ready()
+            self._written = False
         self.send("#CEPRD", [f"{offset:04X}", f"{length:02X}"])
         r = self.receive()  # expect #CMDOK
         if r.type != "#CMDOK":
@@ -335,6 +353,7 @@ class GenericHXProtocol:
     def write_config_memory(self, offset, data):
         self._check_transfer(offset, len(data))
         self.wait_for_ready()
+        self._written = True
         data_string = data.hex().upper()
         self.send("#CEPWR", [f"{offset:04X}", f"{len(data):02X}", data_string])
         r = self.receive()  # expect #CMDOK
@@ -492,10 +511,13 @@ class MediaTekProtocol:
 
 class GX1400Protocol(GenericHXProtocol):
 
+    # A real serial link: the radio's own rate, and the lines as serial adapters expect them
     baudrate = 38400
+    control_lines = True
+    poll_before_read = True  # as the vendor tool does; skipping it is unverified on this model
 
     def _connect(self, tty):
-        self.conn = hxtty.GenericHXTTY(tty, baudrate=self.baudrate)
+        self.conn = hxtty.GenericHXTTY(tty, baudrate=self.baudrate, control_lines=self.control_lines)
         self.connected = True
         logger.debug("Attempting GX1400 sync")
         try:

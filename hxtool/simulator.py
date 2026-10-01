@@ -1,3 +1,4 @@
+from collections import Counter
 from logging import getLogger
 from os import read, write, close
 from threading import Event, Thread
@@ -83,6 +84,8 @@ class HXSimulator(Thread):
         # Fault injection for tests. Maps a reply type to the fault applied
         # to every reply of that type, e.g. {"#CEPDT": "checksum"}.
         self.faults = {}
+        # What the host has sent, by message type; for tests
+        self.received = Counter()
         # Raw content of the GPS logger flash, a multiple of 4k sectors
         self.gps_log = b""
 
@@ -263,6 +266,7 @@ class HXSimulator(Thread):
         if not msg.validate():
             self._reply("#CMDER")
             return
+        self.received[msg.type] += 1
         match msg.type, msg.args:
             case "#CMDOK", []:
                 # The host's acknowledgement of a data reply gets no answer

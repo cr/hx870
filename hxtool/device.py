@@ -119,9 +119,12 @@ def enumerate_devices(models: list[type["HX870"]], force_device: str | None = No
 
     logger.info("Probing serial ports to detect device")
 
-    baudrates = set({38400})  # Default speed to minimise probing delays
+    # Probe at one speed to minimise delays, plus the speeds of models on real serial
+    # links. USB models answer at any speed, so their nominal rate adds nothing.
+    baudrates = set({38400})
     for model in models:
-        baudrates.add(getattr(model.protocol_model, "baudrate", 38400))
+        if model.usb_vendor_id is None:
+            baudrates.add(model.protocol_model.baudrate)
 
     for port in ports:
         magic = read_magic(port.device, baudrates)

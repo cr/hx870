@@ -78,9 +78,11 @@ def test_enumerate_devices(monkeypatch, caplog):
 
     def mock_read_magic(tty, baudrates=None):
         probed.append(tty)
+        probed_rates.update(baudrates or ())
         return devices[tty]["magic"] if tty in devices else unlisted.get(tty, 0)
 
     probed = []
+    probed_rates = set()
     unlisted = {"/dev/pty7": 890}  # ports the system does not list
 
     def mock_grep(regexp):
@@ -132,6 +134,7 @@ def test_enumerate_devices(monkeypatch, caplog):
         ("HX890", "/dev/pty7"),
     ], "unlisted force_device detected by config magic"
     assert probed == ["/dev/pty7"], "only the given port is probed"
+    assert probed_rates == {38400}, "at one rate: the USB models' own rate is not a probing rate"
 
     probed.clear()
     assert enumerate_devices([GX1400], "/dev/pty7") == [

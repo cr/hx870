@@ -86,6 +86,24 @@ Radio is exposed as /dev/tty.usbmodem1411 on Mac OS X.
 * `ACMD:002\r\n` - StartCP, sent by host in the beginning, unacknowledged
 * `#CMDSY\r\n` - Sync command, radio acknowledges with #CMDOK\r\n
 
+### Line settings and timing
+
+Observed in USB captures of the vendor software talking to an HX870, and verified on
+an HX870 (firmware 02.04) and an HX891BT (firmware 1.00):
+
+* The vendor software sets the CDC line coding to 115200 8N1 and never asserts DTR
+  (RTS is high only briefly while the port is opened). Before the host sets a line
+  coding, the radio reports one of all zeros. `hxtool` does the same now.
+* A reply that is not acknowledged with `#CMDOK` is sent again after about 205 ms.
+* Config memory is transferred in chunks of 0x40 bytes. Longer reads return garbled
+  data (the HX870's reply buffer wraps), although the length field would allow 0xff.
+* The vendor software sends `#CEPSR` before every read and write and waits for
+  `#CEPSD 00`. The radios answer reads correctly without that, at about 4000 bytes/s
+  instead of 2000; `hxtool` only polls before a write and before the first read after one.
+* A session ends with the last `#CMDOK`; there is no command for leaving CP mode.
+* The GPS log arrives at about 960 characters/s whatever the line coding: the GPS
+  module's own UART runs at 9600 baud until it is switched with `$PMTK251`.
+
 ### #CMD message format
 
 Tab-separated message fields, concluded by checksum and \r\n. Example:
@@ -122,7 +140,9 @@ Radio starts repeating messages if you don't acknowledge with #CMDOK or similar,
 
 * `#CFLCB 000000` - CheckBlank
 * `#CFLER 000000` - FlashErase
-* `#CFLID AM057N\0\0\0\0` or `AM057N2\0\0\0` - FlashID, firmware flasher tries both during hardware detection/setup
+* `#CFLID AM057N\0\0\0\0` or `AM057N2\0\0\0` - FlashID, firmware flasher tries both during hardware detection/setup.
+  A wrong ID is answered with `#CFLSD 10`, after which the radio replies `#CMDER` until `#CMDNR` is sent again;
+  the right one with `#CFLSD 00`. The flasher follows every command with a `;` byte.
 * `#CFLMC 01` - CommandMd, sent by firmware flasher before #CFLER
 * `#CFLMC 03` - CommandMdr, sent by firmware flasher after last #CFLWR
 * `#CFLRD` - Appears in firmware 02.03, perhaps firmware flash read? Radio says #CMDUN

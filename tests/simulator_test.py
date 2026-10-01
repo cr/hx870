@@ -10,7 +10,7 @@ from time import sleep
 from hxtool import config
 from hxtool import device
 from hxtool import simulator
-from hxtool.protocol import GenericHXProtocol, ProtocolError
+from hxtool.protocol import GenericHXProtocol, GX1400Protocol, ProtocolError
 
 
 @pytest.fixture(name="cp_sim")
@@ -156,6 +156,45 @@ def test_detect_nmea_mode_ping_reply(kill_sims):
     p = GenericHXProtocol(sim.tty)
     assert (p.hx_hardware, p.nmea_mode, p.cp_mode) == (True, True, False), "the ping reply identifies the radio"
     assert not p.nmea_output_seen
+
+
+def test_line_settings(cp_sim, kill_sims):
+    """USB radios are driven like the vendor tool drives them: 115200 baud, DTR and RTS low.
+    The GX1400 hangs off a real serial port, at 38400 baud with the lines asserted."""
+    del kill_sims
+    p = GenericHXProtocol(cp_sim.tty)
+    assert (p.conn.s.baudrate, p.conn.s.dtr, p.conn.s.rts) == (115200, False, False)
+
+    gx_sim = simulator.HXSimulator(config.GX1400Config, mode="CP", loop_delay=0.0005)
+    gx_sim.start()
+    p = GX1400Protocol(gx_sim.tty)
+    assert (p.conn.s.baudrate, p.conn.s.dtr, p.conn.s.rts) == (38400, True, True)
+
+
+def test_status_poll_only_where_needed(cp_sim, kill_sims):
+    """USB radios answer reads without the status poll; it is needed after a write. This
+    doubles the read speed. The GX1400, on a slow serial link, keeps the vendor's polling."""
+    del kill_sims
+    p = GenericHXProtocol(cp_sim.tty)
+    cp_sim.received.clear()
+    for offset in (0x0000, 0x0040, 0x0080):
+        p.read_config_memory(offset, 0x40)
+    assert (cp_sim.received["#CEPRD"], cp_sim.received["#CEPSR"]) == (3, 0), "reads are not polled"
+
+    p.write_config_memory(0x1000, b"\x12\x34")
+    assert cp_sim.received["#CEPSR"] == 1, "a write waits for the radio to be ready"
+    assert p.read_config_memory(0x1000, 2) == b"\x12\x34"
+    assert cp_sim.received["#CEPSR"] == 2, "and so does the first read after a write"
+    p.read_config_memory(0x1000, 2)
+    assert cp_sim.received["#CEPSR"] == 2, "but not the reads after that"
+
+    gx_sim = simulator.HXSimulator(config.GX1400Config, mode="CP", loop_delay=0.0005)
+    gx_sim.start()
+    p = GX1400Protocol(gx_sim.tty)
+    gx_sim.received.clear()
+    p.read_config_memory(0x0000, 0x20)
+    p.read_config_memory(0x0020, 0x20)
+    assert (gx_sim.received["#CEPRD"], gx_sim.received["#CEPSR"]) == (2, 2), "the GX1400 polls before every read"
 
 
 def test_detect_cp_mode(cp_sim, kill_sims):
