@@ -119,6 +119,7 @@ class HXSimulator(Thread):
         # A guess at how the boot block behaves, to exercise the client; not verified.
         self.firmware = {}
         self._flash_mode = False
+        self.powered_off = False  # #CFLMC 02 switches the radio off
         self._named = False  # the HX870 answers #CMDNR once per power-on
 
     def run(self):
@@ -333,6 +334,8 @@ class HXSimulator(Thread):
 
     def _process_cp_message(self, msg):
         logger.debug(f"CP simulator processing message {msg}")
+        if self.powered_off:
+            return
         msg = Message(parse=msg)
         if not msg.validate():
             self._reply("#CMDER")
@@ -378,6 +381,8 @@ class HXSimulator(Thread):
                 ok = flash_id.rstrip("\x00") in self.type.FLASH_ID
                 self._reply("#CFLSD", ["00" if ok else "10"])
                 self.ignore_cmdok = True
+            case "#CFLMC", ["02"] if self._flash_mode:
+                self.powered_off = True
             case "#CFLMC", [mode]:
                 self._flash_mode = mode == "01"
                 if mode == "03":

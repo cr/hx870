@@ -173,8 +173,8 @@ class HX870:
 
     # Firmware flash area (start, end-exclusive) and transfer chunk, from the write maps
     # of the vendor's updaters for the HX870 and the HX890, which agree. The HX891BT has
-    # no updater and inherits them from the HX890. None where the area is unknown, and
-    # the firmware handler then transfers no images.
+    # no updater and inherits them from the HX890; an image read from one fits. None
+    # where the area is unknown, and the firmware handler then transfers no images.
     firmware_range = (0xf40000, 0xff0000)
     firmware_chunk = 0x80
 
@@ -231,6 +231,13 @@ class HX870:
             raise ProtocolError(f"{self.handle} on {self.tty} cannot be rebooted from its current mode")
         logger.info(f"Rebooting {self.handle} on {self.tty}")
         self.firmware.reboot()
+
+    def poweroff(self):
+        """Switch the radio off. Like the restart, this leads through firmware flash mode."""
+        if self.firmware is None:
+            raise ProtocolError(f"{self.handle} on {self.tty} cannot be switched off from its current mode")
+        logger.info(f"Switching off {self.handle} on {self.tty}")
+        self.firmware.power_off()
 
     @classmethod
     def simulators(cls) -> Iterable[Candidate]:

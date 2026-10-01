@@ -5,6 +5,7 @@ from typing import NamedTuple
 
 from . import tty as hxtty
 from .progress import Progress
+from .srec import Image, Segment
 
 logger = getLogger(__name__)
 
@@ -627,10 +628,12 @@ class FirmwareProtocol:
     in it, so several fit into one session. Flash mode ends with reboot(): leaving it
     (#CFLMC 03) restarts the radio, which then is no longer in CP mode.
 
-    Verified on an HX870 with firmware 02.04: the handshake, the read (#CFLRR / #CFLRD,
-    the counterpart of #CFLWR that the updater builds but never sends; the image read is
-    identical to the one the updater carries) and the reboot. Erase and write follow the
-    updater and have not been run against a radio.
+    Verified on an HX870 with firmware 02.04 and an HX891BT with firmware 1.00: the
+    handshake, the read (#CFLRR / #CFLRD, the counterpart of #CFLWR that the updater builds
+    but never sends; the HX870 image read is identical to the one the updater carries) and
+    the reboot. Erase and write follow the updater and have not been run against a radio.
+
+    Images are hxtool.srec.Image: address segments, as the vendor's S-records give them.
     """
 
     # The updater pauses a second around the mode changes and polls the flash status
@@ -638,6 +641,11 @@ class FirmwareProtocol:
     MODE_SETTLE = 1.0
     STATUS_BACKOFF = 0.02
     VERSION_LENGTH = 11  # an image starts with the version, blank padded, e.g. "  02.04    "
+
+    # The flash commands carry the low 24 bits of the MCU's addresses: the firmware area at
+    # 0xF40000 is 0xFFF40000 to the MCU, and in the vendor's S-records.
+    ADDRESS_MASK = 0x00ffffff
+    ADDRESS_BASE = 0xff000000
 
     # How long the HX890 updater waits for the radio to acknowledge the slow commands:
     # the acknowledgement comes when the flash operation is done.
@@ -663,6 +671,7 @@ class FirmwareProtocol:
         self.address_range = address_range        # (start, end-exclusive) of the firmware area, None if unknown
         self.chunk_size = chunk_size
         self.active = False                       # the radio is in flash mode
+        self.flash_id = None                      # the flash ID it went into flash mode with
 
     @property
     def supported(self) -> bool:
@@ -736,6 +745,7 @@ class FirmwareProtocol:
             status = self._request("#CFLID", [self._flash_id_field(flash_id)], "#CFLSD", terminator=True)
             if status.args[:1] == ["00"]:
                 logger.debug(f"Flash ID {flash_id!r} accepted")
+                self.flash_id = flash_id
                 break
             logger.debug(f"Flash ID {flash_id!r} not accepted, status {status.args}")
         else:
@@ -754,6 +764,16 @@ class FirmwareProtocol:
         self.enter_flash_mode()
         sleep(self.MODE_SETTLE)
         self._request("#CFLMC", ["03"], terminator=True)
+        self.active = False
+
+    def power_off(self):
+        """
+        Switch the radio off from flash mode, entering it first if need be (#CFLMC 02, seen
+        on an HX891BT). The radio does not answer: it is gone, a USB radio's port with it.
+        """
+        self.enter_flash_mode()
+        sleep(self.MODE_SETTLE)
+        self.p.write(bytes(Message("#CFLMC", ["02"])) + b";")
         self.active = False
 
     def status(self) -> str:
@@ -814,69 +834,105 @@ class FirmwareProtocol:
 
     # Images
 
-    def read_image(self, progress: Progress | None = None) -> bytes:
-        """Read the whole firmware area; progress is called with (bytes done, bytes total)"""
+    def flash_address(self, address: int) -> int:
+        """The address the flash commands know an MCU address by"""
+        return address & self.ADDRESS_MASK
+
+    def _segments_in_flash(self, image: Image) -> list[Segment]:
+        """The image's segments by their flash addresses"""
+        return Image(Segment(self.flash_address(address), data) for address, data in image.segments).segments
+
+    def _outside_area(self, image: Image) -> list[Segment]:
+        start, end = self.address_range
+        return [segment for segment in self._segments_in_flash(image)
+                if segment.address < start or segment.address + len(segment.data) > end]
+
+    @staticmethod
+    def _span(segment: Segment) -> str:
+        return f"0x{segment.address:06x}..0x{segment.address + len(segment.data) - 1:06x}"
+
+    def image_from_binary(self, data: bytes) -> Image:
+        """A flat image, which has no addresses of its own, laid at the start of the firmware area"""
+        self._require_layout()
+        return Image.from_binary(data, self.ADDRESS_BASE | self.address_range[0])
+
+    def read_image(self, progress: Progress | None = None) -> Image:
+        """
+        Read the whole firmware area, as one segment at its MCU address and under the
+        flash ID of the radio. progress is called with (bytes done, bytes total).
+        """
         self._require_layout()
         start, end = self.address_range
         self.enter_flash_mode()
-        image = bytearray()
+        data = bytearray()
         for offset in range(start, end, self.chunk_size):
             if progress:
                 progress(offset - start, end - start)
-            image += self.read(offset, min(self.chunk_size, end - offset))
+            data += self.read(offset, min(self.chunk_size, end - offset))
         if progress:
             progress(end - start, end - start)
-        return bytes(image)
+        return Image([Segment(self.ADDRESS_BASE | start, bytes(data))], header=self.flash_id or "")
 
-    def write_image(self, data: bytes, progress: Progress | None = None):
+    def write_image(self, image: Image, progress: Progress | None = None):
         """
-        Erase the firmware area and write an image to it. A shorter image is padded with
-        0xFF, erased flash. The image is written as given: see check_image().
+        Erase the firmware area and write an image to it: every chunk the image has bytes
+        in, filled up with 0xFF, erased flash. The other chunks stay erased. The image is
+        written as given, see check_image(); only one that leaves the area is refused.
         """
         self._require_layout()
-        start, end = self.address_range
-        if len(data) > end - start:
-            raise ProtocolError(f"Firmware image is {len(data)} bytes, at most {end - start} fit in "
-                                f"0x{start:06x}..0x{end - 1:06x}")
-        data = data.ljust(end - start, b"\xff")
+        outside = self._outside_area(image)
+        if outside:
+            start, end = self.address_range
+            raise ProtocolError(f"Firmware image at {self._span(outside[0])} lies outside the "
+                                f"firmware area 0x{start:06x}..0x{end - 1:06x}")
+        flash = Image(self._segments_in_flash(image))
+        chunks = sorted({offset - offset % self.chunk_size
+                         for address, data in flash.segments
+                         for offset in range(address, address + len(data))})
         self.enter_flash_mode()
         self.erase()
-        for offset in range(start, end, self.chunk_size):
+        for n, offset in enumerate(chunks):
             if progress:
-                progress(offset - start, end - start)
-            self.write(offset, data[offset - start:offset - start + self.chunk_size])
+                progress(n * self.chunk_size, len(chunks) * self.chunk_size)
+            self.write(offset, flash.read(offset, self.chunk_size))
         if progress:
-            progress(end - start, end - start)
+            progress(len(chunks) * self.chunk_size, len(chunks) * self.chunk_size)
 
-    @classmethod
-    def image_version(cls, data: bytes) -> str:
-        """The version an image names at its start, e.g. '02.04'"""
-        return data[:cls.VERSION_LENGTH].decode("ascii", "replace").strip()
+    def image_version(self, image: Image) -> str:
+        """The version an image names at the start of the firmware area, e.g. '02.04'"""
+        self._require_layout()
+        flash = Image(self._segments_in_flash(image))
+        return flash.read(self.address_range[0], self.VERSION_LENGTH).decode("ascii", "replace").strip("\ufffd ")
 
-    def check_image(self, data: bytes) -> list[ImageCheck]:
+    def check_image(self, image: Image) -> list[ImageCheck]:
         """
-        What the bytes of an image tell about its fitness for this model: that it fits the
-        area, names a version, carries one of the model's flash IDs, and is not blank.
-        Nothing is sent to the radio.
+        What an image tells about its fitness for this model: that it lies within the
+        firmware area, names a version, carries one of the model's flash IDs (in its header
+        record or its data), and has content at the start of the area. Nothing is sent to
+        the radio.
         """
         self._require_layout()
         start, end = self.address_range
-        size = end - start
-        version = self.image_version(data)
-        found = [flash_id for flash_id in self.flash_ids if flash_id.encode("ascii") in data]
-        has_content = any(b != 0xff for b in data[:0x1000])
-        fit = (f", {size - len(data)} bytes short, padded with 0xFF" if len(data) < size
-               else f", {len(data) - size} bytes too long" if len(data) > size else "")
+        segments = self._segments_in_flash(image)
+        outside = self._outside_area(image)
+        version = self.image_version(image)
+        in_header = [flash_id for flash_id in self.flash_ids if flash_id in image.header]
+        in_data = [flash_id for flash_id in self.flash_ids
+                   if any(flash_id.encode("ascii") in data for _, data in segments)]
+        has_content = any(b != 0xff for b in Image(segments).read(start, 0x1000))
         return [
-            ImageCheck("size", len(data) <= size,
-                       f"{len(data)} bytes for 0x{start:06x}..0x{end - 1:06x} ({size} bytes){fit}"),
+            ImageCheck("area", not outside,
+                       f"{self._span(outside[0])} lies outside 0x{start:06x}..0x{end - 1:06x}" if outside
+                       else f"{image.size} bytes in {len(segments)} segment{'s' if len(segments) != 1 else ''}, "
+                            f"within 0x{start:06x}..0x{end - 1:06x}"),
             ImageCheck("version", version.replace(".", "").isdigit() and "." in version,
-                       f"image version {version!r}" if version else "no version string at the start of the image"),
-            ImageCheck("model", bool(found),
-                       f"carries the flash ID {found[0]!r}" if found
+                       f"image version {version!r}" if version else "no version string at the start of the area"),
+            ImageCheck("model", bool(in_header or in_data),
+                       f"header names the flash ID {in_header[0]!r}" if in_header
+                       else f"carries the flash ID {in_data[0]!r}" if in_data
                        else f"carries none of this model's flash IDs {self.flash_ids}"),
             ImageCheck("content", has_content,
-                       "starts with code and tables" if has_content else "starts with erased flash"),
+                       "starts with code and tables" if has_content else "nothing but erased flash at the start"),
         ]
 
 
