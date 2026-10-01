@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hxtool"
-version = "0.3.2"
+version = "0.4.0"
 description = "Tool for Yaesu / Standard Horizon HX series radio flashing and configuration"
 readme = "README.md"
 requires-python = ">=3.10"
