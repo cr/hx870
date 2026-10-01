@@ -13,36 +13,42 @@ class FirmwareCommand(CliCommand):
 
     name = "firmware"
     help = "read or write the handset firmware"
+    what = "firmware"  # the area of the flash this command is about, as the log lines call it
+    writable = True
 
     @staticmethod
-    def setup_args(parser) -> None:
+    def area(hx):
+        """The model's handler for the area"""
+        return hx.firmware
+
+    @classmethod
+    def setup_args(cls, parser) -> None:
 
         action = parser.add_mutually_exclusive_group()
         action.add_argument("--readto",
-                            help="read the firmware from the handset into this file, as S-records",
+                            help=f"read the {cls.what} from the handset into this file, as S-records",
                             type=abspath,
                             metavar="FILE",
                             action="store")
-        action.add_argument("--writefrom",
-                            help="assess the firmware image in this file (S-records) against the handset, "
-                                 "write nothing, and exit non-zero if it fails (see --really)",
-                            type=abspath,
-                            metavar="FILE",
-                            action="store")
+        if cls.writable:
+            action.add_argument("--writefrom",
+                                help="assess the firmware image in this file (S-records) against the handset, "
+                                     "write nothing, and exit non-zero if it fails (see --really)",
+                                type=abspath,
+                                metavar="FILE",
+                                action="store")
+            parser.add_argument("--really",
+                                help="write the --writefrom image to the handset, whatever the assessment says "
+                                     "(writing is untested on a radio so far)",
+                                action="store_true")
 
         parser.add_argument("--binary",
-                            help="FILE is a flat binary image of the firmware area instead of S-records",
-                            action="store_true")
-
-        parser.add_argument("--really",
-                            help="write the --writefrom image to the handset, whatever the assessment says "
-                                 "(writing is untested on a radio so far)",
+                            help=f"FILE is a flat binary image of the {cls.what} area instead of S-records",
                             action="store_true")
 
         parser.add_argument("--reboot",
-                            help="restart the handset when the command went through. Without it a read or "
-                                 "write leaves the handset in flash mode, where it takes further firmware "
-                                 "commands only",
+                            help="restart the handset when the command went through. Without it the handset "
+                                 "is left in flash mode, where it takes firmware and bootrom commands only",
                             action="store_true")
 
     def run(self):
@@ -54,42 +60,43 @@ class FirmwareCommand(CliCommand):
             logger.critical("Handset not in CP mode (MENU + ON)")
             return 11
 
-        if hx.firmware is None:
-            logger.critical(f"Firmware functions are not supported by {hx.handle}")
+        if self.area(hx) is None:
+            logger.critical(f"No {self.what} functions for {hx.handle}")
             return 10
 
-        if self.args.readto is None and self.args.writefrom is None and not self.args.reboot:
-            logger.critical("Specify --readto, --writefrom or --reboot")
+        writefrom = self.args.writefrom if self.writable else None
+        if self.args.readto is None and writefrom is None and not self.args.reboot:
+            logger.critical(f"Specify --readto{', --writefrom' if self.writable else ''} or --reboot")
             return 10
 
         result = 0
         if self.args.readto is not None:
             result = self.read(hx)
-        elif self.args.writefrom is not None:
+        elif writefrom is not None:
             result = self.write(hx)
 
         if self.args.reboot and result == 0:
             hx.reboot()
         elif hx.comm.flash_mode:
-            logger.info("Handset is left in flash mode. `hxtool firmware --reboot` restarts it")
+            logger.info(f"Handset is left in flash mode. `hxtool {self.name} --reboot` restarts it")
         return result
 
-    @staticmethod
-    def log_placement(hx, image: Image) -> None:
+    def log_placement(self, hx, image: Image) -> None:
         """A flat binary carries no addresses, so the log says where it lies"""
         start, size = image.segments[0].address, image.size
-        flash = hx.firmware.flash_address(start)
+        flash = self.area(hx).flash_address(start)
         logger.info(f"Flat binary: {size} bytes for 0x{start:08x}..0x{start + size - 1:08x} "
                     f"(flash address 0x{flash:06x}..0x{flash + size - 1:06x})")
 
     def read(self, hx) -> int:
-        logger.info("Reading firmware from handset")
-        with ui.progress("Reading firmware", "bytes") as progress:
-            image = hx.firmware.read_image(progress=progress)
-        version = hx.firmware.image_version(image)
+        logger.info(f"Reading {self.what} from handset")
+        with ui.progress(f"Reading {self.what}", "bytes") as progress:
+            image = self.area(hx).read_image(progress=progress)
+        version = self.area(hx).image_version(image)
+        image_name = f"{self.what} image, version {version}" if version else f"{self.what} image"
 
         if self.args.binary:
-            logger.info(f"Writing firmware image, version {version}, as flat binary to `{self.args.readto}`")
+            logger.info(f"Writing {image_name} as flat binary to `{self.args.readto}`")
             with open(self.args.readto, "wb") as f:
                 f.write(image.to_binary())
             self.log_placement(hx, image)
@@ -97,7 +104,7 @@ class FirmwareCommand(CliCommand):
 
         # Erased flash is left out: a write erases the area and writes what the records hold
         image = image.without_erased()
-        logger.info(f"Writing firmware image, version {version}, as S-records to `{self.args.readto}` "
+        logger.info(f"Writing {image_name} as S-records to `{self.args.readto}` "
                     f"({image.size} bytes in {len(image.segments)} segments)")
         with open(self.args.readto, "w", encoding="ascii", newline="\n") as f:
             f.write(image.to_srec())

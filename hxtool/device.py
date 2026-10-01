@@ -8,7 +8,7 @@ from typing import NamedTuple
 from collections.abc import Iterable
 
 from .config import HX870Config, HX890Config, HX891Config, GX1400Config
-from .firmware import GenericHXFirmware
+from .firmware import GenericHXBootrom, GenericHXFirmware, HX891Bootrom
 from .nmea import HX870NMEAProtocol, HX890NMEAProtocol
 from .protocol import FirmwareProtocol, GenericHXProtocol, GX1400Protocol, MediaTekProtocol, ProtocolError, \
     ReadMagicProtocol
@@ -171,6 +171,7 @@ class HX870:
     nmea_model = HX870NMEAProtocol
     gps_model = MediaTekProtocol
     firmware_model = GenericHXFirmware
+    bootrom_model = GenericHXBootrom
 
     def __init__(self, tty, identified=False):
         self.tty = tty
@@ -179,6 +180,7 @@ class HX870:
         self.nmea = None
         self.gps = None
         self.firmware = None
+        self.bootrom = None
         self.init_config()
 
     def init_config(self):
@@ -188,7 +190,7 @@ class HX870:
                 self.config = self.config_model(self.comm)
                 self.nmea = None
                 self.gps = self.gps_model(self.comm)
-                self.firmware = self.firmware_model(FirmwareProtocol(self.comm), self.config_model.FLASH_ID)
+                self.init_flash()
                 fw = self.config.firmware_version()
                 logger.info(f"Device on {self.tty} is {self.handle} in CP mode, firmware version {fw}")
             elif self.comm.nmea_mode:
@@ -198,7 +200,7 @@ class HX870:
                 logger.info(f"Device on {self.tty} is {self.handle} in NMEA mode")
             elif self.comm.flash_mode:
                 # Left there by an earlier connection: it takes the firmware commands only
-                self.firmware = self.firmware_model(FirmwareProtocol(self.comm), self.config_model.FLASH_ID)
+                self.init_flash()
                 logger.info(f"Device on {self.tty} is {self.handle} in firmware flash mode")
             elif not self.comm.cp_mode and not self.comm.nmea_mode:
                 self.config = None
@@ -214,6 +216,12 @@ class HX870:
                 logger.critical("This should never happen. Please file an issue on GitHub.")
         else:
             logger.error(f"Device on {self.tty} does not behave like HX hardware")
+
+    def init_flash(self):
+        # Firmware and boot ROM lie in one flash, behind one flash session
+        flash = FirmwareProtocol(self.comm)
+        self.firmware = self.firmware_model(flash, self.config_model.FLASH_ID)
+        self.bootrom = self.bootrom_model(flash)
 
     @property
     def cp_mode(self) -> bool:
@@ -279,6 +287,7 @@ class HX891(HX890):
 
     config_model = HX891Config
     nmea_model = HX890NMEAProtocol
+    bootrom_model = HX891Bootrom
 
 
 class GX1400(HX870):
@@ -298,6 +307,7 @@ class GX1400(HX870):
     nmea_model = None
     gps_model = None
     firmware_model = None
+    bootrom_model = None
 
     def init_config(self):
         # A serial link has no USB identity, so verify we're talking to a GX1400

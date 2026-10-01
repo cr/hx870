@@ -3,7 +3,7 @@ import pytest
 from time import sleep
 
 from hxtool import config, device
-from hxtool.firmware import GenericHXFirmware
+from hxtool.firmware import GenericHXBootrom, GenericHXFirmware, HX891Bootrom
 from hxtool.main import main
 from hxtool.protocol import FirmwareProtocol, GenericHXProtocol, ProtocolError
 from hxtool.simulator import HXSimulator
@@ -16,11 +16,15 @@ AREA = (0xf40000, 0xf40000 + 0x200)
 MCU_START = 0xfff40000  # where the area lies for the MCU, and in the vendor's S-records
 GOOD_IMAGE = b"  02.04    " + b"AM057N" + bytes(0x1f8 - 17)  # a little short of the area, like a real one
 
+BOOT_AREA = (0xff0000, 0xff0600)  # room for the version where the boot block has it
+BOOT_IMAGE = b"\x94\x09\xff\xff".ljust(0x51c, b"\xff") + b"  01.02    STANDARD HORIZON".ljust(0xe4, b"\xff")
+
 
 @pytest.fixture(autouse=True)
-def small_firmware_area(monkeypatch):
-    """Shrink the flash area so the tests do a few transfers, not thousands"""
+def small_flash_areas(monkeypatch):
+    """Shrink the flash areas so the tests do a few transfers, not thousands"""
     monkeypatch.setattr(GenericHXFirmware, "AREA", AREA)
+    monkeypatch.setattr(GenericHXBootrom, "AREA", BOOT_AREA)
 
 
 def flat(data: bytes) -> Image:
@@ -325,6 +329,19 @@ def test_model_found_in_flash_mode_has_the_firmware_handler_only(cp_sim, caplog)
     assert cp_sim.rebooted and cp_sim.received["#CMDNR"] == 1
 
 
+def test_boot_rom_is_read_in_the_firmware_s_flash_session(cp_sim):
+    cp_sim.firmware = {BOOT_AREA[0] + i: byte for i, byte in enumerate(BOOT_IMAGE)}
+    hx = device.HX870(cp_sim.tty, identified=True)
+
+    assert hx.firmware.read_image().to_binary() == b"\xff" * 0x200
+    image = hx.bootrom.read_image()
+    assert image.segments == [Segment(0xffff0000, BOOT_IMAGE)] and image.header == "AM057N2"
+    assert cp_sim.received["#CMDNR"] == 1, "one flash, one flash session"
+    assert hx.bootrom.image_version(image) == "", "the HX870's boot block names no version"
+    assert HX891Bootrom(hx.bootrom.p).image_version(image) == "01.02" and device.HX891.bootrom_model is HX891Bootrom
+    assert not hasattr(hx.bootrom, "write_image"), "nothing is known that writes the boot block"
+
+
 def test_model_without_a_firmware_handler_cannot_reboot(cp_sim):
     hx = device.HX870(cp_sim.tty, identified=True)
     hx.firmware = None
@@ -395,6 +412,48 @@ def test_cli_other_commands_say_a_radio_in_flash_mode_is_not_in_cp_mode(cp_sim, 
     assert "in firmware flash mode" in log and "not in CP mode" in log
 
 
+def test_cli_bootrom_reads_the_boot_block(tmp_path, cp_sim, keep_sims, capsys):
+    cp_sim.firmware = {BOOT_AREA[0] + i: byte for i, byte in enumerate(BOOT_IMAGE)}
+    binary, srec = tmp_path / "boot.bin", tmp_path / "boot.srec"
+    bootrom = ["-t", cp_sim.tty, "-m", "HX870", "bootrom"]
+
+    assert main(bootrom + ["--readto", str(srec)]) == 0
+    log = capsys.readouterr().err
+    assert "Reading boot ROM" in log and "Writing boot ROM image as S-records" in log
+    assert "`hxtool bootrom --reboot` restarts it" in log
+    image = Image.from_srec(srec.read_bytes())
+    assert [segment.address for segment in image.segments] == [0xffff0000, 0xffff0510], "erased rows are left out"
+    assert image.read(0xffff0000, 0x600) == BOOT_IMAGE and image.header == "AM057N2"
+
+    assert main(bootrom + ["--readto", str(binary), "--binary", "--reboot"]) == 0
+    log = capsys.readouterr().err
+    assert "flash address 0xff0000..0xff05ff" in log and "Rebooting HX870" in log
+    assert binary.read_bytes() == BOOT_IMAGE and cp_sim.rebooted and cp_sim.received["#CMDNR"] == 1
+
+
+def test_cli_bootrom_names_the_version_where_the_model_has_one(tmp_path, kill_sims, capsys):
+    sim = HXSimulator(config.HX891Config, mode="CP", loop_delay=0.0005)
+    sim.firmware = {BOOT_AREA[0] + i: byte for i, byte in enumerate(BOOT_IMAGE)}
+    sim.start()
+    assert main(["-t", sim.tty, "-m", "HX891", "bootrom", "--readto", str(tmp_path / "boot.srec"), "--reboot"]) == 0
+    assert "Writing boot ROM image, version 01.02 as S-records" in capsys.readouterr().err
+
+
+def test_cli_bootrom_does_not_write(cp_sim, keep_sims, capsys):
+    with pytest.raises(SystemExit):
+        main(["-t", cp_sim.tty, "-m", "HX870", "bootrom", "--writefrom", "/dev/null"])
+    assert "unrecognized arguments: --writefrom" in capsys.readouterr().err
+    assert main(["-t", cp_sim.tty, "-m", "HX870", "bootrom"]) != 0
+    assert "Specify --readto or --reboot" in capsys.readouterr().err
+    assert cp_sim.received["#CMDNR"] == 0
+
+
+def test_cli_bootrom_refuses_models_without_boot_rom_functions(kill_sims, sims, capsys):
+    assert main(["--simulator", "-m", "GX1400", "-t", "0", "bootrom", "--readto", "/dev/null"]) != 0
+    assert "No boot ROM functions for GX1400" in capsys.readouterr().err
+    assert handshakes(sims) == 0
+
+
 def srec_file(tmp_path, data: bytes, header: str = ""):
     path = tmp_path / "fw.srec"
     path.write_text(Image([Segment(MCU_START, data)], header=header).to_srec())
@@ -412,7 +471,7 @@ def test_cli_requires_an_action(kill_sims, capsys):
 
 def test_cli_refuses_models_without_firmware_functions(kill_sims, sims, capsys):
     assert main(["--simulator", "-m", "GX1400", "-t", "0", "firmware", "--readto", "/dev/null"]) != 0
-    assert "Firmware functions are not supported by GX1400" in capsys.readouterr().err
+    assert "No firmware functions for GX1400" in capsys.readouterr().err
     assert handshakes(sims) == 0
 
 

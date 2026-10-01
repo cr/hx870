@@ -1,5 +1,6 @@
 from .base import run, list_commands
 
+from . import bootrom
 from . import config
 from . import devices
 from . import firmware
@@ -12,6 +13,7 @@ from . import poke
 __all__ = [
     "run",
     "list_commands",
+    "bootrom",
     "config",
     "devices",
     "firmware",

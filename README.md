@@ -108,6 +108,14 @@ override, for both directions: the file is then the firmware area as it lies, fr
 first byte, and the log says where that is (to load it there:
 `rizin -a rx -b 32 -m 0xfff40000 FILE`).
 
+`hxtool bootrom --readto FILE` reads the boot block above the firmware area the same way,
+0xFF0000..0xFFFFFF (0xFFFF0000..0xFFFFFFFF to the MCU), with the same `--binary` and
+`--reboot`. It is the code the radio starts with and the one that serves the flash commands;
+a firmware update leaves it alone. There is no write: the vendor's updaters never write it,
+and the one erase command known is the firmware area's. Read on an HX870 and an HX891BT
+(65536 bytes in ten seconds). The two differ: the HX891BT's names a version, `01.02`, the
+HX870's none. Firmware and boot ROM are read in one flash session, in either order.
+
 The firmware area is 0xF40000..0xFEFFFF (0xFFF40000..0xFFFEFFFF to the MCU and in the
 S-records; the flash commands carry the low 24 bits) on the HX870 and the HX890, per the
 write maps of the vendor's updaters, and on the HX891BT, which has no updater: the image
@@ -126,8 +134,9 @@ What the images of the HX870 (02.03, 02.04) and the HX891BT (1.00) have in commo
   elsewhere in the image.
 
 For users of the library: the model instance carries the firmware handler as `hx.firmware`
-(`read_image()`, `check_image()`, `write_image()`), next to `hx.config` and `hx.gps`. It
-knows where the model's firmware lies (`hxtool.firmware`). The flash session below it is
+(`read_image()`, `check_image()`, `write_image()`), next to `hx.config` and `hx.gps`, and
+the boot ROM's as `hx.bootrom` (`read_image()`). They know where the model's firmware and
+boot block lie (`hxtool.firmware`). The flash session below both is
 `hx.firmware.p`, a `FirmwareProtocol` with nothing model specific in it:
 `enter_flash_mode()`, `read()`, `write()`, `erase()`, `reboot()`, `poweroff()`. An image is
 an `hxtool.srec.Image`: address segments, read from and written to S-records or flat binary.
