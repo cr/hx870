@@ -2,6 +2,7 @@ from argparse import Namespace
 import pytest
 
 from hxtool.cli import base
+from hxtool.main import main
 from hxtool.protocol import ProtocolError
 
 
@@ -51,3 +52,16 @@ def test_run_tears_down_on_error(command):
     with pytest.raises(ProtocolError):
         base.run(Namespace(command="recorder"))
     assert command.calls == ["setup", "run", "teardown"], "teardown runs exactly once, whatever the error"
+
+
+def test_unknown_argument_is_reported_with_the_usage_of_its_command(capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(["firmware", "--reset"])
+    assert stop.value.code == 2
+    message = capsys.readouterr().err
+    assert message.startswith("usage: hxtool firmware ") and "--readto FILE" in message, "what the command takes"
+    assert "hxtool firmware: error: unrecognized arguments: --reset" in message
+
+    with pytest.raises(SystemExit):
+        main(["--reset"])
+    assert capsys.readouterr().err.startswith("usage: hxtool [-h]"), "without a command, the main usage"

@@ -46,13 +46,17 @@ def get_args(args=None):
 
     # Set up subparsers, one for each command
     subparsers = parser.add_subparsers(help="sub command", dest="command")
-    commands_list = hxtool.cli.list_commands()
-    for command_name in commands_list:
-        command_class = commands_list[command_name]
-        sub_parser = subparsers.add_parser(command_name, help=command_class.help)
-        command_class.setup_args(sub_parser)
+    command_parsers = {}
+    for command_name, command_class in hxtool.cli.list_commands().items():
+        command_parsers[command_name] = subparsers.add_parser(command_name, help=command_class.help)
+        command_class.setup_args(command_parsers[command_name])
 
-    return parser.parse_args(args or argv[1:])
+    # argparse reports an argument that a command does not know with the usage of the main
+    # parser, which says nothing about the command. The command's own parser reports it here.
+    parsed, unknown = parser.parse_known_args(args or argv[1:])
+    if unknown:
+        command_parsers.get(parsed.command, parser).error(f"unrecognized arguments: {' '.join(unknown)}")
+    return parsed
 
 
 def at_exit():

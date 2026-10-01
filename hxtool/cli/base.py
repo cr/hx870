@@ -69,7 +69,7 @@ def _subclasses_of(cls):
 
 def list_commands():
     """Return a list of all cli commands"""
-    return dict(sorted((command.name, command) for command in _subclasses_of(CliCommand)))
+    return {command.name: command for command in sorted(_subclasses_of(CliCommand), key=lambda c: c.name)}
 
 
 def run(args) -> int:

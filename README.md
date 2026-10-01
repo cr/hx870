@@ -2,7 +2,7 @@
 
 Here's my collection of experimental Python code and reverse engineering notes
 for hacking the Standard Horizon HX-style maritime radios by Yaesu. Currently supported
-are the **HX870**, **HX890**, and **GX1400** model series.
+are the **HX870**, **HX890**, **HX891**, and **GX1400** model series.
 
 Radios in "CP mode" are usually automatically detected when connected.
 You can also manually select devices with the `--tty` or `--model` CLI options.
