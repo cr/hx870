@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 from functools import reduce
 import pytest
 
@@ -160,6 +158,13 @@ def test_message_checksums():
     assert Message(parse="$PMTK001,622,3*99").checksum_recv == "99"
     assert not Message(parse="$PMTK001,622,3*99").validate()
 
+    # The checksum is the plain XOR over the covered bytes, no character is exempt
+    def xor(data: bytes) -> str:
+        return f"{reduce(lambda x, y: x ^ y, data):02X}"
+
+    assert Message("#CEPWR", ["0100", "02", "21!A"]).checksum == xor(b"#CEPWR\t0100\t02\t21!A\t")
+    assert Message("$PMTK", ["011", "Hello!"]).checksum == xor(b"PMTK011,Hello!")
+
 
 def test_nmea_sentence_parser():
     m = Message(parse="$PMTK183*38\r\n")
@@ -187,15 +192,6 @@ def test_nmea_sentence_builder():
     assert m.validate()
     assert m == Message(parse="$PMTK001,183,3*3A")
     assert str(m) == "$PMTK001,183,3*3A\r\n"
-
-
-def test_checksum_covers_every_byte():
-    # The checksum is the plain XOR over the covered bytes, no character is exempt
-    def xor(data: bytes) -> str:
-        return "%02X" % reduce(lambda x, y: x ^ y, data)
-
-    assert Message("#CEPWR", ["0100", "02", "21!A"]).checksum == xor(b"#CEPWR\t0100\t02\t21!A\t")
-    assert Message("$PMTK", ["011", "Hello!"]).checksum == xor(b"PMTK011,Hello!")
 
 
 def test_nmea_lowercase_edge_case():

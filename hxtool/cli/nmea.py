@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 from logging import getLogger
 import sys
 from time import sleep

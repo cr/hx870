@@ -1,14 +1,11 @@
-# -*- coding: utf-8 -*-
-
-from binascii import unhexlify
 import pytest
 
 from hxtool.memory import pack_waypoint, unpack_waypoint
 from hxtool.protocol import ProtocolError
 
 # Waypoint records as stored in config memory (see config_test.py)
-WPT_DSC = unhexlify("9740019080544157174E001235956745") + b"WPT001".ljust(15, b"\xff") + b"\x01"
-WPT_MANUAL = unhexlify("FFFFFFFFFF2707433353010917166757") + b"long waypoint 2".ljust(15, b"\xff") + b"\x02"
+WPT_DSC = bytes.fromhex("9740019080544157174E001235956745") + b"WPT001".ljust(15, b"\xff") + b"\x01"
+WPT_MANUAL = bytes.fromhex("FFFFFFFFFF2707433353010917166757") + b"long waypoint 2".ljust(15, b"\xff") + b"\x02"
 WPT_EMPTY = b"\xff" * 32
 
 

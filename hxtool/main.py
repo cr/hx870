@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-import atexit
 from argparse import ArgumentParser
 from logging import getLogger
 from sys import exit, argv, stdout
 
-import coloredlogs
 from importlib.metadata import version
 
 import hxtool.cli
+from hxtool.cli import ui
 from hxtool.protocol import ProtocolError
 from hxtool.simulator import HXSimulator
 
@@ -48,16 +46,19 @@ def get_args(args=None):
 
     # Set up subparsers, one for each command
     subparsers = parser.add_subparsers(help="sub command", dest="command")
-    commands_list = hxtool.cli.list_commands()
-    for command_name in commands_list:
-        command_class = commands_list[command_name]
-        sub_parser = subparsers.add_parser(command_name, help=command_class.help)
-        command_class.setup_args(sub_parser)
+    command_parsers = {}
+    for command_name, command_class in hxtool.cli.list_commands().items():
+        command_parsers[command_name] = subparsers.add_parser(command_name, help=command_class.help)
+        command_class.setup_args(command_parsers[command_name])
 
-    return parser.parse_args(args or argv[1:])
+    # argparse reports an argument that a command does not know with the usage of the main
+    # parser, which says nothing about the command. The command's own parser reports it here.
+    parsed, unknown = parser.parse_known_args(args or argv[1:])
+    if unknown:
+        command_parsers.get(parsed.command, parser).error(f"unrecognized arguments: {' '.join(unknown)}")
+    return parsed
 
 
-# @atexit.register
 def at_exit():
     logger.debug("Waiting for backround threads")
     HXSimulator.stop_instances()
@@ -67,17 +68,12 @@ def at_exit():
 
 # This is the entry point used in pyproject.toml
 def main(main_args=None):
-    global logger
-
     args = get_args(main_args)
 
     # Logging is configured here and not at import, so that the package stays quiet as a library
-    if args.debug:
-        coloredlogs.install(level="DEBUG", fmt="%(asctime)s %(levelname)s %(name)s %(message)s")
-    else:
-        coloredlogs.install(level="INFO", fmt="%(asctime)s %(levelname)s %(message)s")
+    ui.setup_logging(args.debug)
 
-    logger.debug("Command arguments: %s" % args)
+    logger.debug(f"Command arguments: {args}")
 
     try:
         result = hxtool.cli.run(args)

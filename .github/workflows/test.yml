@@ -35,5 +35,8 @@ jobs:
       - name: Check that the command line tool starts
         run: hxtool --version
 
+      - name: Lint
+        run: python -m ruff check hxtool tests tools
+
       - name: Run the test suite
         run: python -m pytest -v

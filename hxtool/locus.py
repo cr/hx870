@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-from binascii import hexlify
 from enum import Enum, IntFlag
 from struct import pack, unpack, error as StructError
 from functools import reduce
@@ -84,7 +81,7 @@ class FixQuality(Enum):
     SIMULATOR = 8
 
 
-class LocusHeader(object):
+class LocusHeader:
     def __init__(self, data: bytes, *, verify=True):
         if len(data) < 16:
             raise LocusError("Insufficient data for parsing header")
@@ -101,7 +98,7 @@ class LocusHeader(object):
             self.Checksum
         ) = unpack("<HBBHHHHHBB", data[:16])
         if verify and self.Checksum != checksum(data[:15]):
-            raise LocusError(f"Invalid header checksum in {hexlify(data).decode('ascii')}")
+            raise LocusError(f"Invalid header checksum in {data.hex()}")
 
     def __bytes__(self):
         packed = pack("<HBBHHHHHB",
@@ -118,7 +115,7 @@ class LocusHeader(object):
         return packed
 
 
-class LocusWaypoint(object):
+class LocusWaypoint:
     def __init__(self, content_byte: int, data: bytes, *, verify=True):
         if data.startswith(b"\xff"*6) or data.startswith(b"\x00"*6):
             raise LocusError("Empty waypoint data")
@@ -140,7 +137,7 @@ class LocusWaypoint(object):
             self._d[content["attributes"][i]] = parsed[i]
         self.checksum = parsed[-1]
         if verify and self.checksum != checksum(data[:-1]):
-            raise LocusError(f"Checksum mismatch in waypoint data: {hexlify(data).decode('ascii')}")
+            raise LocusError(f"Checksum mismatch in waypoint data: {data.hex()}")
 
     def __bytes__(self):
         values = []
@@ -165,7 +162,7 @@ class LocusWaypoint(object):
         yield from self._d.keys()
 
 
-class LocusLog(object):
+class LocusLog:
     def __init__(self, header: LocusHeader, data: bytes):
         self._header = header
         content = locus_content_descriptor(header.LogContent)
@@ -195,7 +192,7 @@ class LocusLog(object):
         yield from self._waypoints
 
 
-class LocusSector(object):
+class LocusSector:
     def __init__(self, data: bytes, *, verify=True):
         self.header = LocusHeader(data[:0x10], verify=verify)
         self.mask = data[0x10:0x3c]
@@ -214,7 +211,7 @@ class LocusSector(object):
         yield from self.log
 
 
-class Locus(object):
+class Locus:
     def __init__(self, data: bytes, *, verify=True):
         self.sectors = []
         for sector_offset in range(0, len(data), _SECTOR_SIZE):

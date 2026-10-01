@@ -1,15 +1,16 @@
-# -*- coding: utf-8 -*-
-
-from binascii import hexlify, unhexlify
 from logging import getLogger
 
-from .memory import unpack_waypoint
-from .protocol import Message, GenericHXProtocol, ProtocolError
+from .protocol import GenericHXProtocol
 
 logger = getLogger(__name__)
 
 
-class GenericNMEAProtocol(object):
+class GenericNMEAProtocol:
+    """
+    A radio in NMEA mode. Nothing is implemented yet beyond holding the
+    connection; the classes exist so that every model names its NMEA
+    protocol, like its config and GPS protocol.
+    """
 
     def __init__(self, protocol: GenericHXProtocol):
         self.p = protocol

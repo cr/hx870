@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hxtool"
-version = "0.3.2"
+version = "0.4.0"
 description = "Tool for Yaesu / Standard Horizon HX series radio flashing and configuration"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = "GPL-3.0-only"
 license-files = ["LICENSE.txt"]
 authors = [
@@ -30,18 +30,17 @@ classifiers = [
     "Topic :: Communications :: Ham Radio",
 ]
 dependencies = [
-    "coloredlogs",
     "gpxpy",
     "ipython",
     "pyserial",
+    "rich",
 ]
 
 [project.optional-dependencies]
 dev = [
     "coverage",
-    "pycodestyle",
     "pytest",
-    "pytest-pycodestyle",
+    "ruff",
 ]
 
 [project.urls]
@@ -55,9 +54,17 @@ hxtool = "hxtool.main:main"
 include = ["hxtool*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "hxtool"]
-addopts = "--pycodestyle --strict-markers"
+testpaths = ["tests"]
+addopts = "--strict-markers"
 markers = [
     "slow",
-    "wip",
+    "hardware: talks to real radios; the default fixture hides them",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, and pyupgrade (modern syntax for the target version)
+select = ["E", "W", "F", "UP"]

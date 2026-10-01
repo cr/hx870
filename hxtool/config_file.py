@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
-
 from os import path, stat
 
 
-class ConfigFile(object):
+class ConfigFile:
     """
     Container for an HX870 config memory image as the vendor's .DAT file
     stores it: the 32 KiB image, framed by the config magic 0x0367 (871) at

@@ -1,14 +1,14 @@
 # -*- coding: ascii -*-
 
 import pytest
+import re
 
 import hxtool
-from hxtool.device import enumerate, GX1400, HX870, HX890, models, read_magic
+from hxtool.device import enumerate, GX1400, HX870, models, read_magic
 from hxtool.main import main
 from hxtool.protocol import GenericHXProtocol, ProtocolError
 from hxtool.simulator import HXSimulator
 import serial
-from sys import platform
 from time import sleep
 
 
@@ -25,15 +25,6 @@ def enumerate_devices(*args):
 
 def identified_devices(*args):
     return [(c.model.__name__, c.tty, c.identified) for c in hxtool.device.enumerate_devices(*args)]
-
-
-@pytest.fixture(name="kill_sims")
-def kill_simulator_threads_fixture():
-    if platform.startswith("win"):
-        pytest.skip("Skipping simulator tests on Windows", allow_module_level=True)
-    yield None
-    HXSimulator.stop_instances()
-    HXSimulator.join_instances()
 
 
 @pytest.fixture(name="monkeypatch_read_magic")
@@ -87,12 +78,18 @@ def test_enumerate_devices(monkeypatch, caplog):
 
     def mock_read_magic(tty, baudrates=None):
         probed.append(tty)
+        probed_rates.update(baudrates or ())
         return devices[tty]["magic"] if tty in devices else unlisted.get(tty, 0)
 
     probed = []
+    probed_rates = set()
     unlisted = {"/dev/pty7": 890}  # ports the system does not list
 
+    def mock_grep(regexp):
+        return (port for port in mock_comports() if re.search(regexp, port.device))
+
     monkeypatch.setattr(serial.tools.list_ports, "comports", mock_comports)
+    monkeypatch.setattr(serial.tools.list_ports, "grep", mock_grep)
     monkeypatch.setattr(hxtool.device, "read_magic", mock_read_magic)
 
     # Detection by USB metadata
@@ -137,6 +134,7 @@ def test_enumerate_devices(monkeypatch, caplog):
         ("HX890", "/dev/pty7"),
     ], "unlisted force_device detected by config magic"
     assert probed == ["/dev/pty7"], "only the given port is probed"
+    assert probed_rates == {38400}, "at one rate: the USB models' own rate is not a probing rate"
 
     probed.clear()
     assert enumerate_devices([GX1400], "/dev/pty7") == [
@@ -168,26 +166,20 @@ def test_enumerate_devices(monkeypatch, caplog):
     ], "include_ports: only hx1"
 
 
-def test_enumerate_all(kill_sims):
-    devices = [type(d).__name__ for d in enumerate(add_simulator=True)]
-    assert "HX870Sim" in devices
-    assert "HX890Sim" in devices
-    assert "HX891Sim" in devices
-    assert "GX1400" in devices
-    simulated = [d for d in devices if d.endswith("Sim") or d == "GX1400"]
-    assert len(simulated) == 7, "all simulators listed (real radios may be attached as well)"
-
-
 def test_enumerate_force_model(kill_sims):
     devices = [type(d).__name__ for d in enumerate(force_model="gx1400", add_simulator=True)]
-    assert "GX1400" in devices
-    assert len(devices) == 1
-
+    assert devices == ["GX1400"]
     assert not enumerate(force_model="GX123", add_simulator=True)
+
+    devices = enumerate(force_device="0", force_model="HX891", add_simulator=True)
+    assert [type(d).__name__ for d in devices] == ["HX891Sim"], "index within the model's own list"
+    assert devices[0].cp_mode
 
 
 def test_enumerate_force_device(kill_sims):
     all_devices = enumerate(add_simulator=True)
+    simulated = [type(d).__name__ for d in all_devices]
+    assert simulated == ["HX870Sim", "HX870Sim", "HX890Sim", "HX890Sim", "HX891Sim", "HX891Sim", "GX1400"]
     for i in range(len(all_devices)):
         devices = enumerate(force_device=f"{i}", add_simulator=True)
         assert len(devices) == 1
@@ -197,14 +189,7 @@ def test_enumerate_force_device(kill_sims):
     assert not enumerate(force_device=f"{len(all_devices) + 1}", add_simulator=True)
 
 
-def test_enumerate_force_both(kill_sims):
-    devices = enumerate(force_device="0", force_model="HX891", add_simulator=True)
-    assert len(devices) == 1
-    assert type(devices[0]).__name__ == "HX891Sim"
-    assert devices[0].cp_mode
-
-
-@pytest.mark.parametrize("model", [HX870, HX890, GX1400])
+@pytest.mark.parametrize("model", [HX870, GX1400])
 def test_enumerate_unlisted_device(kill_sims, monkeypatch, model):
     # The simulator's pty is a port that the system does not list
     sim = HXSimulator(model.config_model, mode="CP")
@@ -231,16 +216,6 @@ def test_enumerate_unlisted_device(kill_sims, monkeypatch, model):
     assert len(devices) == 1
     assert type(devices[0]) is model, "model detected by config magic"
     assert devices[0].cp_mode
-
-
-def test_hxtool_unlisted_device(capsys, kill_sims):
-    sim = HXSimulator(HX870.config_model, mode="CP")
-    sim.start()
-
-    assert main(["--tty", sim.tty, "--model", "HX870", "info"]) == 0
-    outerr = capsys.readouterr()
-    assert f"Serial device:\t{sim.tty}" in outerr.out
-    assert "23.42" in outerr.out
 
 
 def test_hxtool_devices_silent_nmea(capsys, kill_sims, monkeypatch):

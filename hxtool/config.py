@@ -1,13 +1,19 @@
-# -*- coding: utf-8 -*-
-
-from binascii import hexlify, unhexlify
 from logging import getLogger
-from typing import Tuple
 
-from .memory import unpack_waypoint, region_code_map
+from .memory import unpack_waypoint
+from .progress import Progress
 from .protocol import GenericHXProtocol, ProtocolError
 
 logger = getLogger(__name__)
+
+
+def _unprotected(start, end, skipped):
+    """The sub-ranges of [start, end) that are not covered by any of the skipped ranges"""
+    pieces = [(start, end)]
+    for s_start, s_end in skipped:
+        pieces = [piece for a, b in pieces
+                  for piece in ((a, min(b, s_start)), (max(a, s_end), b)) if piece[0] < piece[1]]
+    return sorted(pieces)
 
 
 def _counter_byte(counter, what: str) -> bytes:
@@ -16,76 +22,146 @@ def _counter_byte(counter, what: str) -> bytes:
     return bytes([counter])
 
 
-class GenericHXConfig(object):
+class GenericHXConfig:
+    """
+    Config memory of an HX style radio. Everything model specific is a class
+    attribute; subclasses only override attributes, not methods.
+    """
 
-    CONFIG_MAGIC = 0xffff
-    FLASH_ID = ["AM000A"]
+    CONFIG_MAGIC = 0xffff  # first and last two bytes of config memory, big endian
+    FLASH_ID = ["AM000A"]  # hardware IDs this model is known by
 
-    CHUNK_SIZE = 0x40
+    CHUNK_SIZE = 0x40  # bytes per transfer
     CONFIG_SIZE = 0x8000
-    PROGRESS_LOG_AT = 0x1000
 
-    MMSI_OFFSET = 0x00b0
-    ATIS_CODE_OFFSET = 0x00b6
+    MMSI_OFFSET = 0x00b0  # 10 nibbles BCD, then the update counter byte
+    ATIS_CODE_OFFSET = 0x00b6  # 10 nibbles BCD, then the update counter byte
     ATIS_ENABLED_OFFSET = 0x00a2
     FLASH_ID_OFFSET = 0x0100
+    FLASH_ID_RANGE = (0x0100, 0x010f)  # flash ID and its padding
     REGION_CODE_OFFSET = 0x010f
-    WAYPOINT_OFFSET = 0x4300
+    FIRMWARE_VERSION_OFFSET = None  # None: the radio answers #CVRRQ instead
+    VARIANT_OFFSET = None  # None: no variant name in config memory
+    VARIANT_LENGTH = 14
+    WAYPOINT_OFFSET = 0x4300  # None: no waypoints
+    WAYPOINT_COUNT = 200
+
+    # Ranges (start, end) a config write leaves alone unless forced: device
+    # identity and state that the firmware maintains. The magic at both ends
+    # and the flash ID range are protected separately.
+    # The vendor tool leaves the same ranges alone (USB capture of its HX870 config
+    # write), except for the last turned off block, which it writes.
+    PROTECTED_RANGES = [
+        (0x000f, 0x0010),  # always 0x00
+        (0x0078, 0x0080),  # model name of channel group 1
+        (0x0088, 0x0090),  # model name of channel group 2
+        (0x0098, 0x00a0),  # model name of channel group 3
+        (0x00a8, 0x00b0),  # model name of channel group 4
+        (0x0110, 0x0120),  # radio last turned off: timestamp and position
+        (0x0280, 0x0300),  # unknown, in the preset list page
+    ]
 
     REGION_CODE_US = 0xff
-    WAYPOINT_COUNT = 200
+    REGION_CODES = {
+        0: "INTERNATIONAL",
+        1: "UNITED KINGDOM",
+        2: "BELGIUM",
+        3: "NETHERLAND",
+        4: "SWEDEN",
+        5: "GERMANY",
+        255: "NONE",
+    }
 
     def __init__(self, protocol: GenericHXProtocol):
         self.p = protocol
 
-    def config_read(self, progress=False):
+    def config_read(self, progress: Progress | None = None) -> bytes:
+        """Read the whole config memory; progress is called with (bytes done, bytes total)"""
         config_data = b''
-        bytes_to_go = self.CONFIG_SIZE
         for offset in range(0x0000, self.CONFIG_SIZE, self.CHUNK_SIZE):
             if progress:
-                percent_done = int(100.0 * offset / bytes_to_go)
-                if offset % self.PROGRESS_LOG_AT == 0:
-                    logger.info(f"{offset} / {bytes_to_go} bytes ({percent_done}%)")
+                progress(offset, self.CONFIG_SIZE)
             config_data += self.p.read_config_memory(offset, self.CHUNK_SIZE)
         if progress:
-            logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
+            progress(self.CONFIG_SIZE, self.CONFIG_SIZE)
         return config_data
 
-    def _config_write_precheck(self, data, check_region):
+    def magic_ranges(self):
+        return [(0x0000, 0x0002), (self.CONFIG_SIZE - 2, self.CONFIG_SIZE)]
+
+    def _config_write_precheck(self, data, force):
         if len(data) != self.CONFIG_SIZE:
-            raise ProtocolError("Unexpected config data size")
+            raise ProtocolError(f"Unexpected config data size {len(data)}, expected {self.CONFIG_SIZE}")
         magic = self.p.read_config_memory(0x0000, 2)
-        magic_end = self.p.read_config_memory(self.CONFIG_SIZE-2, 2)
+        magic_end = self.p.read_config_memory(self.CONFIG_SIZE - 2, 2)
         if magic != data[:2] or magic_end != data[-2:]:
-            raise ProtocolError("Unexpected config magic in device")
+            if not force:
+                raise ProtocolError("Unexpected config magic in device")
+            logger.warning("Ignoring config magic mismatch. Flashing anyway")
         region = ord(self.p.read_config_memory(self.REGION_CODE_OFFSET, 1))
         region_is_us = region == self.REGION_CODE_US
         data_is_us = data[self.REGION_CODE_OFFSET] == self.REGION_CODE_US
         if region_is_us != data_is_us:
-            if check_region:
-                logger.error("Region mismatch")
+            if not force:
                 raise ProtocolError("Region mismatch")
             logger.warning("Ignoring region mismatch. Flashing anyway")
 
-    def config_write(self, data, check_region=True, progress=False):
-        self._config_write_precheck(data, check_region)
-        bytes_to_go = len(data)
-        if progress:
-            logger.info(f"0 / {bytes_to_go} bytes (0%)")
-        self.p.write_config_memory(0x0002, data[0x0002:0x000f])
-        self.p.write_config_memory(0x0010, data[0x0010:self.CHUNK_SIZE])
-        last_chunk = self.CONFIG_SIZE - self.CHUNK_SIZE
-        for offset in range(self.CHUNK_SIZE, last_chunk, self.CHUNK_SIZE):
+    def config_write(self, data, force=False, write_flash_id=False, progress: Progress | None = None):
+        """
+        Write a config image to the device, leaving the device's identity alone:
+        the magic is never written, the flash ID only with write_flash_id, and
+        the model's other protected ranges only with force. force also turns
+        the magic and region checks into warnings.
+        progress is called with (bytes done, bytes total).
+        """
+        self._config_write_precheck(data, force)
+        skipped = self.magic_ranges()
+        if not write_flash_id:
+            skipped.append(self.FLASH_ID_RANGE)
+        else:
+            logger.warning(f"Writing flash ID {self.flash_id()!r} -> {self._flash_id_of(data)!r}")
+        if not force:
+            skipped += self.PROTECTED_RANGES
+        for offset in range(0, self.CONFIG_SIZE, self.CHUNK_SIZE):
             if progress:
-                percent_done = int(100.0 * offset / bytes_to_go)
-                if offset % self.PROGRESS_LOG_AT == 0:
-                    logger.info(f"{offset} / {bytes_to_go} bytes ({percent_done}%)")
-            self.p.write_config_memory(offset, data[offset:offset+self.CHUNK_SIZE])
-        self.p.write_config_memory(last_chunk, data[last_chunk:-2])
+                progress(offset, self.CONFIG_SIZE)
+            for start, end in _unprotected(offset, offset + self.CHUNK_SIZE, skipped):
+                self.p.write_config_memory(start, data[start:end])
         if progress:
-            logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
+            progress(self.CONFIG_SIZE, self.CONFIG_SIZE)
+
+    def _flash_id_of(self, image) -> str:
+        """The flash ID stored in a config image"""
+        start, end = self.FLASH_ID_RANGE
+        return image[start:end].rstrip(b"\x00\xff").decode("ascii", errors="replace")
+
+    def flash_id(self) -> str:
+        start, end = self.FLASH_ID_RANGE
+        return self.p.read_config_memory(start, end - start).rstrip(b"\x00\xff").decode("ascii", errors="replace")
+
+    def check_flash_id(self) -> bool:
+        fid = self.flash_id()
+        if fid in self.FLASH_ID:
+            logger.debug("Device reported expected flash ID %s", fid)
+            return True
+        logger.debug(f"Flash ID mismatch. Device reported {fid}, expected {self.FLASH_ID}")
+        return False
+
+    def firmware_version(self) -> str:
+        if self.FIRMWARE_VERSION_OFFSET is None:
+            return self.p.get_firmware_version()
+        data = self.p.read_config_memory(self.FIRMWARE_VERSION_OFFSET, 3).hex()
+        return (data[1] if data.startswith("0") else data[0:2]) + "." + data[2:4]
+
+    def variant(self):
+        """The variant name stored in config memory, or None if the model has none"""
+        if self.VARIANT_OFFSET is None:
+            return None
+        return self.p.read_config_memory(self.VARIANT_OFFSET, self.VARIANT_LENGTH).rstrip(b"\xff").decode()
 
     def read_waypoints(self):
+        if self.WAYPOINT_OFFSET is None:
+            raise ProtocolError(f"Waypoints unsupported by {type(self).__name__[:-6]}")
         wp_data = b''
         waypoint_end_offset = self.WAYPOINT_OFFSET + self.WAYPOINT_COUNT * 32
         for address in range(self.WAYPOINT_OFFSET, waypoint_end_offset, self.CHUNK_SIZE):
@@ -100,7 +176,7 @@ class GenericHXConfig(object):
 
     def read_mmsi(self):
         data = self.p.read_config_memory(self.MMSI_OFFSET, 6)
-        mmsi = hexlify(data[0:5]).decode().upper()[0:9]
+        mmsi = data[0:5].hex().upper()[0:9]
         return mmsi, data[5]
 
     def write_mmsi(self, mmsi: str = None, counter: int = None):
@@ -121,11 +197,11 @@ class GenericHXConfig(object):
             code = mmsi + "0"
             if counter is None:
                 counter = self.read_mmsi()[1]
-        self.p.write_config_memory(self.MMSI_OFFSET, unhexlify(code) + _counter_byte(counter, "MMSI"))
+        self.p.write_config_memory(self.MMSI_OFFSET, bytes.fromhex(code) + _counter_byte(counter, "MMSI"))
 
     def read_atis(self):
         data = self.p.read_config_memory(self.ATIS_CODE_OFFSET, 6)
-        atis = hexlify(data[0:5]).decode().upper()
+        atis = data[0:5].hex().upper()
         return atis, data[5]
 
     def write_atis(self, atis: str = None, counter: int = None):
@@ -145,9 +221,9 @@ class GenericHXConfig(object):
             code = atis
             if counter is None:
                 counter = self.read_atis()[1]
-        self.p.write_config_memory(self.ATIS_CODE_OFFSET, unhexlify(code) + _counter_byte(counter, "ATIS"))
+        self.p.write_config_memory(self.ATIS_CODE_OFFSET, bytes.fromhex(code) + _counter_byte(counter, "ATIS"))
 
-    def read_atis_enabled(self) -> Tuple[bool, int]:
+    def read_atis_enabled(self) -> tuple[bool, int]:
         atis_config = ord(self.p.read_config_memory(self.ATIS_ENABLED_OFFSET, 1))
         atis_enabled = atis_config & 1 == 1
         return atis_enabled, atis_config
@@ -161,9 +237,9 @@ class GenericHXConfig(object):
             logger.warning("Unknown ATIS enabled value. Flashing anyway")
         return self.p.write_config_memory(self.ATIS_ENABLED_OFFSET, b)
 
-    def read_region(self) -> Tuple[str, int]:
+    def read_region(self) -> tuple[str, int]:
         region_code = ord(self.p.read_config_memory(self.REGION_CODE_OFFSET, 1))
-        region = region_code_map.get(region_code, "")
+        region = self.REGION_CODES.get(region_code, "")
         return region, region_code
 
     def write_region(self, region: int):
@@ -171,7 +247,7 @@ class GenericHXConfig(object):
             b = bytes([region])
         except ValueError:
             raise ProtocolError("Invalid region format")
-        if region not in region_code_map:
+        if region not in self.REGION_CODES:
             logger.warning("Unknown region. Flashing anyway")
         return self.p.write_config_memory(self.REGION_CODE_OFFSET, b)
 
@@ -205,50 +281,33 @@ class GX1400Config(GenericHXConfig):
 
     CHUNK_SIZE = 0x20
     CONFIG_SIZE = 0x2000
-    PROGRESS_LOG_AT = 0x0800
 
     MMSI_OFFSET = 0x0060
     ATIS_CODE_OFFSET = 0x0066
     ATIS_ENABLED_OFFSET = 0x0052
     FLASH_ID_OFFSET = 0x0098
+    FLASH_ID_RANGE = (0x0098, 0x009f)
     REGION_CODE_OFFSET = 0x009f
+    FIRMWARE_VERSION_OFFSET = 0x001d
+    VARIANT_OFFSET = 0x00d0
     WAYPOINT_OFFSET = None
-
-    REGION_CODE_US = 0x00
     WAYPOINT_COUNT = 0
 
-    def config_write(self, data, check_region=True, progress=False):
-        self._config_write_precheck(data, check_region)
-        bytes_to_go = self.CONFIG_SIZE
-        if progress:
-            logger.info(f"0 / {bytes_to_go} bytes (0%)")
-        # Skip writing the following data to the device:
-        # magic, firmware version, flash ID, unknown 0x00a0-0x00bf, last
-        # turned off fix, serial no, production date, some padding at the end
-        self.p.write_config_memory(0x0002, data[0x0002:0x001d])
-        self.p.write_config_memory(0x0020, data[0x0020:0x0040])
-        self.p.write_config_memory(0x0040, data[0x0040:0x0060])
-        self.p.write_config_memory(0x0060, data[0x0060:0x0080])
-        self.p.write_config_memory(0x0080, data[0x0080:0x0098])
-        self.p.write_config_memory(0x009f, data[0x009f:0x00a0])
-        self.p.write_config_memory(0x00d0, data[0x00d0:0x00f0])
-        self.p.write_config_memory(0x00f0, data[0x00f0:0x0110])
-        for offset in range(0x0120, 0x1fa0, self.CHUNK_SIZE):
-            if progress:
-                percent_done = int(100.0 * offset / bytes_to_go)
-                if offset % self.PROGRESS_LOG_AT == 0:
-                    logger.info(f"{offset} / {bytes_to_go} bytes ({percent_done}%)")
-            self.p.write_config_memory(offset, data[offset:offset+self.CHUNK_SIZE])
-        if progress:
-            logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
+    PROTECTED_RANGES = [
+        (0x001d, 0x0020),  # firmware version
+        (0x00a0, 0x00d0),  # unknown, and radio last turned off fix
+        (0x0110, 0x0120),  # serial number and production date
+        (0x1fa0, 0x2000),  # padding
+    ]
 
-    def read_waypoints(self):
-        raise ProtocolError("Waypoints unsupported by GX1400")
-
-    def read_region(self):
-        region_code = ord(self.p.read_config_memory(self.REGION_CODE_OFFSET, 1))
-        try:
-            region = ["USA", "INTL", "UK", "BE", "NL", "SW", "GRM", "JPN"][region_code]
-        except IndexError:
-            region = ""
-        return region, region_code
+    REGION_CODE_US = 0x00
+    REGION_CODES = {
+        0: "USA",
+        1: "INTL",
+        2: "UK",
+        3: "BE",
+        4: "NL",
+        5: "SW",
+        6: "GRM",
+        7: "JPN",
+    }

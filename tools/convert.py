@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-# Extract data from pcap dumps with
-# tshark -r $PCAPFILE -2 -R "usb.device_address == 6 && usb.transfer_type == 3" -T fields -e usb.endpoint_address.direction -e usb.capdata
+# Extract data from USB pcap dumps of the vendor tool talking to a radio, with
+# tshark -r $PCAPFILE -2 -R "usb.device_address == 6 && usb.transfer_type == 3" \
+#     -T fields -e usb.endpoint_address.direction -e usb.capdata
 
-import binascii
 import os
 import subprocess as sp
 import sys
 
 if not len(sys.argv) == 3:
-    sys.stderr.write("usage: %s print|dump <file_name>\n" % os.path.basename(sys.argv[0]))
+    sys.stderr.write(f"usage: {os.path.basename(sys.argv[0])} print|dump <file_name>\n")
     sys.exit(1)
 
 mode = sys.argv[1]
@@ -47,16 +46,16 @@ if proc.returncode != 0:
     sys.exit(8)
 
 protocol = []
-for l in output.decode("utf-8").split("\n"):
-    if len(l) == 0:
+for line in output.decode("utf-8").split("\n"):
+    if len(line) == 0:
         continue
-    x = l.strip().split("\t")
-    s = binascii.unhexlify(x[2].replace(":", "")).decode("utf-8")
+    x = line.strip().split("\t")
+    s = bytes.fromhex(x[2].replace(":", "")).decode("utf-8")
     protocol.append((x[0], x[1], s))
 
 if mode == "print":
     for dev, direction, string in protocol:
-        print("%s %s%s" % (dev, "> " if direction == "0" else "  < ", repr(string)[1:-1]))
+        print(f"{dev} {'> ' if direction == '0' else '  < '}{repr(string)[1:-1]}")
 
 elif mode == "dump":
     start_address = None
@@ -69,11 +68,10 @@ elif mode == "dump":
                 length = int(c[2], 16)
                 if start_address is None:
                     start_address = address
-                    sys.stderr.write("INFO: start address 0x%08x\n" % start_address)
+                    sys.stderr.write(f"INFO: start address 0x{start_address:08x}\n")
                 if prev_address is not None:
                     if address != prev_address + length:
-                        sys.stderr.write("WARNING: non-continguous address, new address 0x%08x\n" % address)
-                data = binascii.unhexlify(c[3])
+                        sys.stderr.write(f"WARNING: non-continguous address, new address 0x{address:08x}\n")
+                data = bytes.fromhex(c[3])
                 sys.stdout.buffer.write(data)
                 prev_address = address
-

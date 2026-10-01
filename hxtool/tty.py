@@ -1,32 +1,37 @@
-# -*- coding: utf-8 -*-
-
 from logging import getLogger
 from serial import Serial
 
 logger = getLogger(__name__)
 
 
-class GenericHXTTY(object):
+class GenericHXTTY:
     """
     Serial communication for Standard Horizon HX maritime radios
     """
 
-    def __init__(self, tty, timeout=2, baudrate=9600):
+    def __init__(self, tty, timeout=2, baudrate=9600, control_lines=True):
         """
         Serial connection class for HX870 handsets
 
         :param tty: str TTY device to use
         :param timeout: float default timeout for serial
+        :param baudrate: int line speed (nominal for USB devices)
+        :param control_lines: bool whether DTR and RTS are asserted while the port is open
         """
         self.tty = tty
-        logger.debug(f"Connecting to {tty}")
+        logger.debug(f"Connecting to {tty} at {baudrate} baud, DTR/RTS {'asserted' if control_lines else 'low'}")
         self.default_timeout = timeout
-        self.s = Serial(tty, baudrate, timeout=timeout)
-        self.s.flushInput()
-        self.s.flushOutput()
+        self.s = Serial(baudrate=baudrate, timeout=timeout)
+        self.s.port = tty
+        # Set before opening, so that the lines are in the wanted state from the start
+        self.s.dtr = control_lines
+        self.s.rts = control_lines
+        self.s.open()
+        self.s.reset_input_buffer()
+        self.s.reset_output_buffer()
 
     def write(self, data):
-        logger.debug("OUT: %s" % repr(data))
+        logger.debug(f"OUT: {data!r}")
         return self.s.write(data)
 
     def read(self, *args, **kwargs):
@@ -57,9 +62,9 @@ class GenericHXTTY(object):
         if self.s.in_waiting > 0:
             message = f"{self.tty} flushing {self.s.in_waiting} bytes from input buffer"
             logger.debug(message) if expected else logger.warning(message)
-        return self.s.flushInput()
+        return self.s.reset_input_buffer()
 
     def flush_output(self):
         if self.s.out_waiting > 0:
             logger.warning(f"{self.tty} flushing {self.s.out_waiting} bytes from output buffer")
-        return self.s.flushOutput()
+        return self.s.reset_output_buffer()

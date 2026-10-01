@@ -1,16 +1,17 @@
-# -*- coding: utf-8 -*-
-
 from logging import getLogger
 import os
 import re
 from serial.tools import list_ports
 from serial.tools.list_ports_common import ListPortInfo
 import sys
-from typing import Iterable, List, NamedTuple, Optional, Set, Type
+from typing import NamedTuple
+from collections.abc import Iterable
 
 from .config import HX870Config, HX890Config, HX891Config, GX1400Config
+from .firmware import GenericHXBootrom, GenericHXFirmware, HX891Bootrom
 from .nmea import HX870NMEAProtocol, HX890NMEAProtocol
-from .protocol import GenericHXProtocol, GX1400Protocol, MediaTekProtocol, ReadMagicProtocol
+from .protocol import FirmwareProtocol, GenericHXProtocol, GX1400Protocol, MediaTekProtocol, ProtocolError, \
+    ReadMagicProtocol
 from .simulator import HXSimulator, SimulatorError
 
 logger = getLogger(__name__)
@@ -30,14 +31,13 @@ exclude_ports = [
 
 class Candidate(NamedTuple):
     """A port and the model class to talk to it with"""
-    model: Type["HX870"]
+    model: type["HX870"]
     tty: str
     identified: bool  # known to be that model (USB metadata or forced), not merely probed
 
 
 def enumerate(force_device=None, force_model=None, add_simulator=False):
 
-    global models
     if force_model:
         try:
             model_list = [models[force_model.upper()]]
@@ -68,7 +68,7 @@ def enumerate(force_device=None, force_model=None, add_simulator=False):
     return [c.model(c.tty, identified=c.identified) for c in devices]
 
 
-def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] = None) -> List[Candidate]:
+def enumerate_devices(models: list[type["HX870"]], force_device: str | None = None) -> list[Candidate]:
 
     # The numeric device selector is only applicable as index into this function's
     # result. Therefore, we need to ignore it and generate the full list here.
@@ -111,7 +111,6 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
     # Auto-detect based on config magic (can be slow, skip unless necessary)
 
     if not force_device:
-        global include_ports, exclude_ports
         if include_ports:
             ports = [p for p in ports if p.device in include_ports]
         else:
@@ -122,9 +121,12 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
 
     logger.info("Probing serial ports to detect device")
 
-    baudrates = set({38400})  # Default speed to minimise probing delays
+    # Probe at one speed to minimise delays, plus the speeds of models on real serial
+    # links. USB models answer at any speed, so their nominal rate adds nothing.
+    baudrates = set({38400})
     for model in models:
-        baudrates.add(getattr(model.protocol_model, "baudrate", 38400))
+        if model.usb_vendor_id is None:
+            baudrates.add(model.protocol_model.baudrate)
 
     for port in ports:
         magic = read_magic(port.device, baudrates)
@@ -140,7 +142,7 @@ def enumerate_devices(models: List[Type["HX870"]], force_device: Optional[str] =
     return devices
 
 
-def read_magic(tty: str, baudrates: Set[int] = {38400}) -> int:
+def read_magic(tty: str, baudrates: set[int] = {38400}) -> int:
     for baud in baudrates:
         comm = ReadMagicProtocol(tty, baudrate=baud)
         if comm.hx_hardware:
@@ -152,7 +154,7 @@ def read_magic(tty: str, baudrates: Set[int] = {38400}) -> int:
     return 0
 
 
-class HX870(object):
+class HX870:
     """
     Device object for Standard Horizon HX870 maritime radios
     """
@@ -168,6 +170,8 @@ class HX870(object):
     config_model = HX870Config
     nmea_model = HX870NMEAProtocol
     gps_model = MediaTekProtocol
+    firmware_model = GenericHXFirmware
+    bootrom_model = GenericHXBootrom
 
     def __init__(self, tty, identified=False):
         self.tty = tty
@@ -175,6 +179,8 @@ class HX870(object):
         self.config = None
         self.nmea = None
         self.gps = None
+        self.firmware = None
+        self.bootrom = None
         self.init_config()
 
     def init_config(self):
@@ -184,13 +190,18 @@ class HX870(object):
                 self.config = self.config_model(self.comm)
                 self.nmea = None
                 self.gps = self.gps_model(self.comm)
-                fw = self.comm.get_firmware_version()
+                self.init_flash()
+                fw = self.config.firmware_version()
                 logger.info(f"Device on {self.tty} is {self.handle} in CP mode, firmware version {fw}")
             elif self.comm.nmea_mode:
                 self.config = None
                 self.nmea = self.nmea_model(self.comm)
                 self.gps = self.gps_model(self.comm)
                 logger.info(f"Device on {self.tty} is {self.handle} in NMEA mode")
+            elif self.comm.flash_mode:
+                # Left there by an earlier connection: it takes the firmware commands only
+                self.init_flash()
+                logger.info(f"Device on {self.tty} is {self.handle} in firmware flash mode")
             elif not self.comm.cp_mode and not self.comm.nmea_mode:
                 self.config = None
                 self.nmea = None
@@ -206,12 +217,32 @@ class HX870(object):
         else:
             logger.error(f"Device on {self.tty} does not behave like HX hardware")
 
+    def init_flash(self):
+        # Firmware and boot ROM lie in one flash, behind one flash session
+        flash = FirmwareProtocol(self.comm)
+        self.firmware = self.firmware_model(flash, self.config_model.FLASH_ID)
+        self.bootrom = self.bootrom_model(flash)
+
     @property
     def cp_mode(self) -> bool:
         return self.comm.cp_mode
 
-    def check_flash_id(self, flash_id: list = None):
-        return self.comm.check_flash_id(flash_id or self.config_model.FLASH_ID)
+    def reboot(self):
+        """
+        Restart the radio. The way to do that from CP mode leads through firmware flash
+        mode, see FirmwareProtocol.reboot(). The radio comes up in its normal mode.
+        """
+        if self.firmware is None:
+            raise ProtocolError(f"{self.handle} on {self.tty} cannot be rebooted from its current mode")
+        logger.info(f"Rebooting {self.handle} on {self.tty}")
+        self.firmware.p.reboot()
+
+    def poweroff(self):
+        """Switch the radio off. Like the restart, this leads through firmware flash mode."""
+        if self.firmware is None:
+            raise ProtocolError(f"{self.handle} on {self.tty} cannot be switched off from its current mode")
+        logger.info(f"Switching off {self.handle} on {self.tty}")
+        self.firmware.p.poweroff()
 
     @classmethod
     def simulators(cls) -> Iterable[Candidate]:
@@ -222,7 +253,8 @@ class HX870(object):
             yield Candidate(sim_cls, sim.tty, identified=True)
 
     def __str__(self):
-        return f"{self.brand} {self.handle} on `{self.tty} [{'CP Mode' if self.comm.cp_mode else 'NMEA Mode'}]`"
+        mode = "CP Mode" if self.comm.cp_mode else "Flash Mode" if self.comm.flash_mode else "NMEA Mode"
+        return f"{self.brand} {self.handle} on `{self.tty} [{mode}]`"
 
 
 class HX890(HX870):
@@ -255,6 +287,7 @@ class HX891(HX890):
 
     config_model = HX891Config
     nmea_model = HX890NMEAProtocol
+    bootrom_model = HX891Bootrom
 
 
 class GX1400(HX870):
@@ -273,21 +306,19 @@ class GX1400(HX870):
     config_model = GX1400Config
     nmea_model = None
     gps_model = None
+    firmware_model = None
+    bootrom_model = None
 
     def init_config(self):
-        # Verify we're talking to a GX1400 on that tty
-        self.comm.hx_hardware = self.check_flash_id()
+        # A serial link has no USB identity, so verify we're talking to a GX1400
+        # by its flash ID
+        config = self.config_model(self.comm)
+        self.comm.hx_hardware = self.comm.hx_hardware and config.check_flash_id()
         if self.comm.hx_hardware and self.comm.cp_mode:
-            self.config = self.config_model(self.comm)
-
-            # There are multiple GX1400 variants. The variant type can be
-            # read from the device's memory, so let's just use that string
-            # to refer to the device here.
-            variant = self.comm.read_config_memory(0xd0, 14).rstrip(b"\xff").decode()
-            if variant:
-                self.handle = variant
-
-            fw = self.comm.get_firmware_version()
+            self.config = config
+            # There are multiple GX1400 variants, named in config memory
+            self.handle = config.variant() or self.handle
+            fw = config.firmware_version()
             logger.info(f"Device on {self.tty} is {self.handle}, firmware version {fw}")
         else:
             logger.error(f"Device on {self.tty} does not behave or look like GX1400")

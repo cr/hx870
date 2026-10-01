@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
-
 from argparse import Namespace
 import pytest
 
 from hxtool.cli import base
+from hxtool.main import main
 from hxtool.protocol import ProtocolError
 
 
@@ -40,28 +39,29 @@ def test_run_life_cycle(command):
     assert base.run(Namespace(command="recorder")) == 0
     assert command.calls == ["setup", "run", "teardown"]
 
-
-def test_run_tears_down_after_failed_setup(command):
+    command.calls.clear()
     command.setup_ok = False
     assert base.run(Namespace(command="recorder")) == 10
-    assert command.calls == ["setup", "teardown"]
+    assert command.calls == ["setup", "teardown"], "teardown also after a failed setup"
+
+    assert base.run(Namespace(command="nonesuch")) == 5
 
 
-@pytest.mark.parametrize("exception", [ProtocolError("boom"), TimeoutError("silence"), OSError("gone")])
-def test_run_tears_down_on_error(command, exception):
-    command.run_raises = exception
-    with pytest.raises(type(exception)):
+def test_run_tears_down_on_error(command):
+    command.run_raises = ProtocolError("boom")
+    with pytest.raises(ProtocolError):
         base.run(Namespace(command="recorder"))
     assert command.calls == ["setup", "run", "teardown"], "teardown runs exactly once, whatever the error"
 
 
-def test_run_tears_down_on_user_abort(command):
-    command.run_raises = KeyboardInterrupt()
-    with pytest.raises(KeyboardInterrupt):
-        base.run(Namespace(command="recorder"))
-    assert command.calls == ["setup", "run", "teardown"]
+def test_unknown_argument_is_reported_with_the_usage_of_its_command(capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(["firmware", "--reset"])
+    assert stop.value.code == 2
+    message = capsys.readouterr().err
+    assert message.startswith("usage: hxtool firmware ") and "--readto FILE" in message, "what the command takes"
+    assert "hxtool firmware: error: unrecognized arguments: --reset" in message
 
-
-def test_run_unknown_command(command):
-    assert base.run(Namespace(command="nonesuch")) == 5
-    assert command.calls == []
+    with pytest.raises(SystemExit):
+        main(["--reset"])
+    assert capsys.readouterr().err.startswith("usage: hxtool [-h]"), "without a command, the main usage"

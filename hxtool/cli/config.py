@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
-
 from logging import getLogger
 from os.path import abspath
 
 import hxtool
+from . import ui
 from .base import CliCommand
 from ..protocol import ProtocolError
 
@@ -28,6 +27,15 @@ class ConfigCommand(CliCommand):
                             type=abspath,
                             action="store")
 
+        parser.add_argument("--force",
+                            help="flash despite config magic or region mismatch, and write the "
+                                 "protected device state too (everything but magic and flash ID)",
+                            action="store_true")
+
+        parser.add_argument("--force-flashid",
+                            help="write the flash ID from the image (changes the device's hardware identity)",
+                            action="store_true")
+
     def run(self):
         hx = hxtool.get(self.args)
         if hx is None:
@@ -44,10 +52,10 @@ class ConfigCommand(CliCommand):
         ret = 0
 
         if self.args.dump is not None:
-            # TODO: warn on flash ID mismatch
             logger.info("Reading config flash from handset")
             try:
-                data = hx.config.config_read(progress=True)
+                with ui.progress("Reading config", "bytes") as progress:
+                    data = hx.config.config_read(progress=progress)
             except ProtocolError as e:
                 logger.error(e)
                 ret = 10
@@ -58,13 +66,14 @@ class ConfigCommand(CliCommand):
                     f.write(data)
 
         if self.args.flash is not None:
-            # TODO: add --really safeguard on flash ID mismatch
             with open(self.args.flash, "rb") as f:
                 logger.info(f"Reading config data from `{self.args.flash}`")
                 data = f.read()
                 logger.info("Writing config to handset")
                 try:
-                    hx.config.config_write(data, progress=True)
+                    with ui.progress("Writing config", "bytes") as progress:
+                        hx.config.config_write(data, force=self.args.force, write_flash_id=self.args.force_flashid,
+                                               progress=progress)
                 except ProtocolError as e:
                     logger.error(e)
                     ret = 10
