@@ -385,29 +385,44 @@ class MediaTekProtocol:
                     return
         raise TimeoutError("GPS module won't sync. Please reboot the handset")
 
-    def set_baudrate(self, rate: int):
-        # Set up log transmission baudrate
-        #
-        # This is a tricky one:
-        # * If you set it to 9600, the GPS module normally acknowledges the command and life goes on,
-        #   but slowly.
-        # * If you set it to 115200, the module sometimes responds with a non-standard system message "003",
-        #   and transfer continues at high speed. But it might also just acknowledge the wrong command 225 instead.
-        #   It might also stop responding completely, but behavior is highly unpredictable.
-        # * If you set it to any other value, the module stops responding completely until you remove the battery.
-        #
-        # Checking for the ACK ($PMTK001,225,3) after the request is not reliable either. Massive syncing before
-        # and after setting the baudrate works most reliably, but it also fails intermittently, sometimes making
-        # the GPS module hang until reboot. The vendor tool transfers at the high rate without trouble; how it
-        # gets there is not known yet (the USB captures in dumps/ may hold the answer).
+    # The GPS module talks to the radio at 9600 baud, which is what the radio's firmware
+    # expects outside of a log transfer, and what limits a transfer to about 960 characters
+    # per second. At 115200 baud the log arrives five to six times faster.
+    #
+    # What the module needs, measured on an HX870 and an HX891BT with the port opened as
+    # the vendor software does (115200 baud line coding, DTR low):
+    # - A switch is not acknowledged. For about a second after it the module takes no
+    #   command, and a command sent in that time can leave it deaf.
+    # - At the high speed, replies to short commands like the sync cannot be relied on;
+    #   a log dump comes through complete.
+    # - Switched to the speed it already has, the module goes deaf. Switching to the high
+    #   speed and back brings a deaf module back.
+    DEFAULT_BAUDRATE = 9600
+    FAST_BAUDRATE = 115200
+    SWITCH_SETTLE = 1.5  # seconds to leave the module alone after a switch
 
-        self.sync()
-        self.p.send("$PMTK", ["251", str(rate)])
+    def set_baudrate(self, rate: int):
+        """Switch the GPS module's speed. Only call this when its current speed is the other one."""
+        self.send("$PMTK", ["251", str(rate)])
+        sleep(self.SWITCH_SETTLE)
+        self.p.conn.flush_input(expected=True)  # the module may send a system message
+
+    def ensure_ready(self):
+        """
+        Make sure the GPS module answers at its default speed. It does not when an earlier
+        transfer was cut short at the high speed, or when it was left deaf.
+        """
         try:
-            _ = self.receive()  # may or may not ACK
+            return self.sync(timeout=2.5)
+        except TimeoutError:
+            logger.warning("GPS module does not answer, restoring its speed")
+        self.set_baudrate(self.DEFAULT_BAUDRATE)  # from the high speed
+        try:
+            return self.sync(timeout=2.5)
         except TimeoutError:
             pass
-        self.sync()
+        self.set_baudrate(self.FAST_BAUDRATE)  # from deaf
+        self.set_baudrate(self.DEFAULT_BAUDRATE)
         self.sync()
 
     def read_log_status(self) -> dict:
@@ -446,13 +461,25 @@ class MediaTekProtocol:
             "full_stop": full_stop
         }
 
-    def read_log(self, progress: Progress | None = None) -> bytes:
-        """Read the raw GPS log; progress is called with (lines received, lines total)"""
-        raw_log_data = b''
-        self.sync()
+    def read_log(self, progress: Progress | None = None, fast: bool = False) -> bytes:
+        """
+        Read the raw GPS log; progress is called with (lines received, lines total).
+        With fast, the module is switched to the high speed for the transfer and always
+        switched back afterwards, also when the transfer fails or is interrupted. Not
+        every model's module takes that well, see the device classes' gps_fast_log.
+        """
+        self.ensure_ready()
+        if not fast:
+            return self._read_log_lines(progress)
+        self.set_baudrate(self.FAST_BAUDRATE)
+        try:
+            return self._read_log_lines(progress)
+        finally:
+            self.set_baudrate(self.DEFAULT_BAUDRATE)
+            self.ensure_ready()
 
-        # The radio behaves so erratically that the best option for now is not setting the baudrate at all
-        # (set_baudrate(115200)) and sticking with the slow, but reliable, default 9600.
+    def _read_log_lines(self, progress: Progress | None = None) -> bytes:
+        raw_log_data = b''
 
         # ReadLog command to radio
         self.send("$PMTK", ["622", "1"])
@@ -493,9 +520,6 @@ class MediaTekProtocol:
         r = self.receive()
         if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "622", "3"]:
             raise ProtocolError(f"Unexpected ReadLog acknowledgement from device: {str(r).strip()}")
-
-        # After a transfer at high speed: if you don't switch back to 9600 baud, the GPS module sometimes
-        # behaves strangely until reboot. Sometimes, switching back will make the module hang until reboot.
 
         return raw_log_data
 

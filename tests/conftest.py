@@ -2,6 +2,7 @@ import pytest
 import serial.tools.list_ports
 import sys
 
+from hxtool.protocol import MediaTekProtocol
 from hxtool.simulator import HXSimulator
 
 WINDOWS = sys.platform.startswith("win")
@@ -15,6 +16,12 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if any("sim" in name for name in item.fixturenames):
             item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def quick_gps_speed_switch(monkeypatch):
+    """The simulated GPS module settles in 50 ms, so the tests need not wait the real 1.5 s"""
+    monkeypatch.setattr(MediaTekProtocol, "SWITCH_SETTLE", 0.1)
 
 
 @pytest.fixture(name="kill_sims")

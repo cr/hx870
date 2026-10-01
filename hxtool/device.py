@@ -168,6 +168,9 @@ class HX870:
     config_model = HX870Config
     nmea_model = HX870NMEAProtocol
     gps_model = MediaTekProtocol
+    # Whether the GPS module can be switched to 115200 baud for a log transfer. The
+    # HX870's can (reliably, five times faster).
+    gps_fast_log = True
 
     def __init__(self, tty, identified=False):
         self.tty = tty
@@ -236,6 +239,10 @@ class HX890(HX870):
 
     config_model = HX890Config
     nmea_model = HX890NMEAProtocol
+    # On the HX891BT a speed switch restarts the GPS module, upon which the radio's firmware
+    # re-initializes it, baud rate included; the transfer then fails as often as not and
+    # the module is left deaf. The HX890 is taken to work like the HX891BT.
+    gps_fast_log = False
 
 
 class HX891(HX890):

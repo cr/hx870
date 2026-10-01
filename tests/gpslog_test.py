@@ -2,9 +2,10 @@ from json import load
 import pytest
 from struct import pack
 
-from hxtool import locus
+from hxtool import config, locus
 from hxtool.cli.gpslog import to_hm
 from hxtool.main import main
+from hxtool.protocol import GenericHXProtocol, MediaTekProtocol
 from hxtool.simulator import HXSimulator
 
 LOG_CONTENT = 0x7f  # UTC, fix type, latitude, longitude, height, speed, heading
@@ -144,3 +145,86 @@ def test_gpx_export_fix_and_satellites(tmpdir):
     assert gpx.count("<fix>") == 4, "unmappable fix types are left out"
     for sat in (0, 6, 9, 12, 4):
         assert f"<sat>{sat}</sat>" in gpx
+
+
+def gps_of(sim) -> MediaTekProtocol:
+    return MediaTekProtocol(GenericHXProtocol(sim.tty))
+
+
+def test_log_is_read_at_high_speed_and_the_module_restored(kill_sims):
+    sim = HXSimulator(config.HX870Config, mode="CP", loop_delay=0.0005)
+    sim.gps_log = SAMPLE_LOG
+    sim.start()
+    gps = gps_of(sim)
+
+    assert gps.read_log(fast=True) == SAMPLE_LOG
+    assert sim.gps_baudrates == [115200, 9600], "switched up for the transfer and back down, nothing else"
+    assert sim.gps_baudrate == 9600, "the module is left at the speed the firmware expects"
+    assert gps.read_log_status()["slots_used"] == 4, "and answers as usual afterwards"
+
+    sim.gps_baudrates.clear()
+    assert gps.read_log() == SAMPLE_LOG
+    assert sim.gps_baudrates == [], "the default transfer never touches the speed"
+
+
+def test_module_speed_is_restored_after_a_failed_transfer(kill_sims, monkeypatch):
+    sim = HXSimulator(config.HX870Config, mode="CP", loop_delay=0.0005)
+    sim.gps_log = SAMPLE_LOG
+    sim.start()
+    gps = gps_of(sim)
+
+    def interrupted(self, progress=None):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(MediaTekProtocol, "_read_log_lines", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        gps.read_log(fast=True)
+    assert sim.gps_baudrates == [115200, 9600], "even an interrupted transfer ends at 9600"
+    assert sim.gps_baudrate == 9600
+
+
+@pytest.mark.parametrize("state, what", [
+    (115200, "a previous run died mid-transfer"),
+    (None, "the module was left deaf"),
+])
+def test_unresponsive_module_is_recovered(kill_sims, state, what):
+    sim = HXSimulator(config.HX870Config, mode="CP", loop_delay=0.0005)
+    sim.gps_log = SAMPLE_LOG
+    sim.gps_baudrate = state
+    sim.start()
+    gps = gps_of(sim)
+
+    assert gps.read_log(fast=True) == SAMPLE_LOG, what
+    assert sim.gps_baudrate == 9600
+
+
+def test_module_is_left_alone_while_it_switches(kill_sims, monkeypatch):
+    # A command sent too soon after a switch is lost: the settle time is not optional
+    sim = HXSimulator(config.HX870Config, mode="CP", loop_delay=0.0005)
+    sim.gps_log = SAMPLE_LOG
+    sim.gps_settle = 0.5
+    sim.start()
+    gps = gps_of(sim)
+
+    monkeypatch.setattr(MediaTekProtocol, "SWITCH_SETTLE", 0.6)
+    assert gps.read_log(fast=True) == SAMPLE_LOG
+
+
+@pytest.mark.parametrize("selector, options, switched", [
+    (["-t", "0"], [], True),  # HX870: fast where the module takes it
+    (["-t", "0"], ["--slow"], False),
+    (["-m", "HX891", "-t", "0"], [], False),  # HX891BT: its module does not
+    (["-m", "HX891", "-t", "0"], ["--fast"], True),
+    (["-m", "HX890", "-t", "0"], [], False),  # HX890: taken to work like the HX891BT
+])
+def test_gpslog_speed_by_model(tmpdir, kill_sims, monkeypatch, selector, options, switched):
+    switches = []
+    sim_stop = HXSimulator.stop
+
+    def stop_and_record(self):
+        switches.extend(self.gps_baudrates)
+        sim_stop(self)
+
+    monkeypatch.setattr(HXSimulator, "stop", stop_and_record)
+    assert main(["--simulator"] + selector + ["gpslog", "--raw", str(tmpdir.join("log.raw"))] + options) == 0
+    assert switches == ([115200, 9600] if switched else [])

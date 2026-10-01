@@ -38,6 +38,13 @@ class GpsLogCommand(CliCommand):
         parser.add_argument("-e", "--erase",
                             help="erase GPS log data from device",
                             action="store_true")
+        speed = parser.add_mutually_exclusive_group()
+        speed.add_argument("--fast",
+                           help="switch the GPS module to 115200 baud for the transfer (default where it is reliable)",
+                           action="store_true")
+        speed.add_argument("--slow",
+                           help="read the log at the GPS module's default speed",
+                           action="store_true")
 
     def run(self):
 
@@ -55,6 +62,7 @@ class GpsLogCommand(CliCommand):
 
         result = 0
 
+        hx.gps.ensure_ready()
         hx.gps.send("$PMTK", ["605"])  # Query GPS module firmware version
         _ = hx.gps.receive()
 
@@ -71,7 +79,8 @@ class GpsLogCommand(CliCommand):
             if stat["slots_used"] > 0 or self.args.raw:
                 logger.info("Reading GPS log from handset")
                 with ui.progress("Reading GPS log", "blocks") as progress:
-                    raw_log_data = hx.gps.read_log(progress=progress)
+                    fast = self.args.fast or (hx.gps_fast_log and not self.args.slow)
+                    raw_log_data = hx.gps.read_log(progress=progress, fast=fast)
                 logger.info(f"Received {len(raw_log_data)} bytes of raw log data from handset")
             else:
                 logger.info("Nothing to read from handset")

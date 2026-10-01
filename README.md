@@ -104,6 +104,23 @@ an HX870 (firmware 02.04) and an HX891BT (firmware 1.00):
 * The GPS log arrives at about 960 characters/s whatever the line coding: the GPS
   module's own UART runs at 9600 baud until it is switched with `$PMTK251`.
 
+### GPS module speed
+
+`$PMTK251,115200` switches the GPS module to 115200 baud, and the log then arrives five to
+six times faster. `hxtool gpslog` does that where it is reliable (`--fast` and `--slow`
+override the model's default) and always switches back to 9600, which the radio's firmware
+expects. What the module needs:
+
+* The switch is not acknowledged. For about a second afterwards the module takes no
+  command, and a command sent in that time can leave it deaf.
+* At the high speed, replies to short commands like `$PMTK000` cannot be relied on; a log
+  dump comes through complete.
+* Switched to the speed it already has, the module goes deaf. Switching to 115200 and
+  back to 9600 brings a deaf module back.
+* HX870: reliable. HX891BT, and by assumption the HX890: a switch restarts the module (`$PMTK011,MTKGPS`), upon which
+  the radio's firmware re-initializes it (`$PMTK225` and friends, baud rate included), so
+  the transfer fails as often as not. That is where the stray `$PMTK001,225,3` comes from.
+
 ### #CMD message format
 
 Tab-separated message fields, concluded by checksum and \r\n. Example:

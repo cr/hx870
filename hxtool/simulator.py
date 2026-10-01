@@ -88,6 +88,19 @@ class HXSimulator(Thread):
         self.received = Counter()
         # Raw content of the GPS logger flash, a multiple of 4k sectors
         self.gps_log = b""
+        # The GPS module's UART speed (None: out of step with the radio, deaf) and the speeds
+        # it was switched to. Modelled on an HX870 and an HX891BT:
+        # - the radio's firmware expects 9600;
+        # - at the high speed, replies to PMTK000 cannot be relied on (never sent here),
+        #   while a log dump comes through;
+        # - a switch is not acknowledged, and for gps_settle seconds after it the module
+        #   takes no command;
+        # - switched to the speed it already has, the module goes deaf; only a switch to
+        #   the high speed brings it back.
+        self.gps_baudrate = 9600
+        self.gps_baudrates = []
+        self.gps_settle = 0.05
+        self._gps_switched_at = 0.0
 
     def run(self):
         if self.stop_running.is_set():
@@ -231,7 +244,23 @@ class HXSimulator(Thread):
         msg = Message(parse=msg)
         if msg.type != "$PMTK" or not msg.validate():
             return
+        if time() - self._gps_switched_at < self.gps_settle:
+            logger.debug("CP simulator: GPS module is still switching speed, command lost")
+            return
         match msg.args:
+            case ["251", rate]:
+                self.gps_baudrates.append(int(rate))
+                self._gps_switched_at = time()
+                if self.gps_baudrate is None:
+                    self.gps_baudrate = 115200 if int(rate) == 115200 else None
+                elif int(rate) == self.gps_baudrate:
+                    self.gps_baudrate = None
+                else:
+                    self.gps_baudrate = int(rate)
+            case _ if self.gps_baudrate is None:
+                pass
+            case ["000"] if self.gps_baudrate != 9600:
+                pass
             case ["000"]:
                 self._reply("$PMTK", ["001", "0", "3"])
             case ["605"]:
