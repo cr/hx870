@@ -1,6 +1,7 @@
 from functools import reduce
 from logging import getLogger
 from time import time, sleep
+from typing import NamedTuple
 
 from . import tty as hxtty
 from .progress import Progress
@@ -607,6 +608,276 @@ class MediaTekProtocol:
         r = self.receive()
         if r.type != "$PMTK" or len(r.args) != 3 or r.args != ["001", "184", "3"]:
             raise ProtocolError(f"Unexpected EraseLog acknowledgement from device: {str(r).strip()}")
+
+
+class ImageCheck(NamedTuple):
+    """One sanity check of a firmware image"""
+    what: str
+    passed: bool
+    detail: str
+
+
+class FirmwareProtocol:
+    """
+    Firmware flash access over the #CFL* command family, following the vendor's HX870
+    firmware updater step by step. The updater for the HX890 sends the same sequence.
+
+    The radio is put into flash mode by a handshake (#CMDNR, #CFLID, #CFLMC 01) that it
+    grants once per power-on. The transfers below enter flash mode when needed and stay
+    in it, so several fit into one session. Flash mode ends with reboot(): leaving it
+    (#CFLMC 03) restarts the radio, which then is no longer in CP mode.
+
+    Verified on an HX870 with firmware 02.04: the handshake, the read (#CFLRR / #CFLRD,
+    the counterpart of #CFLWR that the updater builds but never sends; the image read is
+    identical to the one the updater carries) and the reboot. Erase and write follow the
+    updater and have not been run against a radio.
+    """
+
+    # The updater pauses a second around the mode changes and polls the flash status
+    # before every transfer, backing off from 20 ms while the flash is busy.
+    MODE_SETTLE = 1.0
+    STATUS_BACKOFF = 0.02
+    VERSION_LENGTH = 11  # an image starts with the version, blank padded, e.g. "  02.04    "
+
+    # How long the HX890 updater waits for the radio to acknowledge the slow commands:
+    # the acknowledgement comes when the flash operation is done.
+    ERASE_TIMEOUT = 10
+    BLANK_CHECK_TIMEOUT = 5
+    WRITE_TIMEOUT = 8
+
+    # Bits of the flash status byte, as the HX890 updater names them
+    STATUS_BITS = {
+        0x01: "blank error",
+        0x02: "erase error",
+        0x04: "program error",
+        0x08: "read error",
+        0x10: "ID error",
+        0x20: "area error",
+        0x40: "unknown",
+        0x80: "busy",
+    }
+
+    def __init__(self, proto: GenericHXProtocol, flash_ids, address_range=None, chunk_size=0x80):
+        self.p = proto
+        self.flash_ids = flash_ids                # the model's accepted #CFLID values
+        self.address_range = address_range        # (start, end-exclusive) of the firmware area, None if unknown
+        self.chunk_size = chunk_size
+        self.active = False                       # the radio is in flash mode
+
+    @property
+    def supported(self) -> bool:
+        """The model's flash layout is known, so images can be transferred"""
+        return self.address_range is not None
+
+    def _require_layout(self):
+        if not self.supported:
+            raise ProtocolError("Firmware flash layout for this model is unknown")
+
+    # Exchanges
+
+    def _request(self, message_type, args=None, reply_type=None, terminator=False, timeout=None):
+        """
+        One exchange, in the pattern of every # request: the radio acknowledges with #CMDOK,
+        sends its data reply if the command has one, and that reply is acknowledged back.
+        The updater follows the mode and erase commands with a ';' byte (terminator).
+        A timeout extends the wait for the acknowledgement beyond the transport's.
+        Returns the data reply, or None for a command without one.
+        """
+        self.p.write(bytes(Message(message_type, args)) + (b";" if terminator else b""))
+        if timeout is not None:
+            deadline = time() + timeout
+            while not self.p.available() and time() < deadline:
+                sleep(0.01)
+        r = self.p.receive()
+        if r.type == "#CMDUN":
+            raise ProtocolError(f"Radio does not know the command {message_type}")
+        if r.type != "#CMDOK":
+            raise ProtocolError(f"Radio did not acknowledge {message_type}: {str(r).strip()}")
+        if reply_type is None:
+            # Some of these are followed by a status line (#CFLMC 01 by #CFLSD 00);
+            # consume it so it cannot be taken for the next command's answer.
+            sleep(0.05)
+            while self.p.available():
+                logger.debug(f"Trailing reply to {message_type}: {self.p.read_line()!r}")
+            return None
+        d = self.p.receive()
+        if d.type != reply_type:
+            raise ProtocolError(f"Unexpected reply to {message_type}: {str(d).strip()}")
+        self.p.send("#CMDOK")  # a data reply is acknowledged, or the radio repeats it
+        return d
+
+    @staticmethod
+    def _flash_id_field(flash_id: str) -> str:
+        # The updater pads the ID to ten bytes with NUL. (It computes the checksum over '!'
+        # padding and substitutes NUL afterwards; the radio accepts the checksum over the
+        # bytes sent, as done here.)
+        return flash_id + "\x00" * (10 - len(flash_id))
+
+    # Flash mode
+
+    def enter_flash_mode(self):
+        """Put the radio into flash mode, unless it is already. Possible once per power-on."""
+        if self.active:
+            return
+        logger.debug("Entering firmware flash mode")
+        # The updater names itself, offers a flash ID, and on refusal starts over with the next
+        # one. The radio answers #CMDNR with its own ID, so that one goes first.
+        candidates = list(self.flash_ids)
+        for n in range(len(candidates)):
+            if n:
+                sleep(self.MODE_SETTLE)
+            named = self._request("#CMDNR", ["STANDARD HORIZON"], "#CMDND", terminator=True)
+            own = named.args[0].rstrip("\x00") if named.args else ""
+            logger.debug(f"Radio names itself {own!r}")
+            if own in candidates:
+                candidates.remove(own)
+                candidates.insert(0, own)
+            flash_id = candidates[n]
+            status = self._request("#CFLID", [self._flash_id_field(flash_id)], "#CFLSD", terminator=True)
+            if status.args[:1] == ["00"]:
+                logger.debug(f"Flash ID {flash_id!r} accepted")
+                break
+            logger.debug(f"Flash ID {flash_id!r} not accepted, status {status.args}")
+        else:
+            raise ProtocolError(f"Radio accepted none of the flash IDs {self.flash_ids}")
+        sleep(self.MODE_SETTLE)
+        self._request("#CFLMC", ["01"], terminator=True)
+        self.active = True
+        self.p.sync()
+        self.p.sync()
+
+    def reboot(self):
+        """
+        Restart the radio by leaving flash mode, entering it first if need be. The radio
+        comes up in its normal mode, so this connection has nothing more to say to it.
+        """
+        self.enter_flash_mode()
+        sleep(self.MODE_SETTLE)
+        self._request("#CFLMC", ["03"], terminator=True)
+        self.active = False
+
+    def status(self) -> str:
+        """Flash status byte as two hex digits; '00' is ready"""
+        d = self._request("#CFLSR", ["00"], "#CFLSD")
+        if not d.args:
+            raise ProtocolError(f"Flash status without a value: {str(d).strip()}")
+        return d.args[0]
+
+    @classmethod
+    def describe_status(cls, flash_status: str) -> str:
+        """The bits of a flash status byte by name, e.g. 'program error, ID error'"""
+        try:
+            value = int(flash_status, 16)
+        except ValueError:
+            return "unreadable"
+        return ", ".join(name for bit, name in cls.STATUS_BITS.items() if value & bit) or "ready"
+
+    def wait_for_ready(self, timeout=30):
+        """Poll the status until the flash is ready, backing off as the updater does"""
+        backoff, deadline = self.STATUS_BACKOFF, time() + timeout
+        while True:
+            flash_status = self.status()
+            if flash_status == "00":
+                return
+            if time() >= deadline:
+                raise TimeoutError(f"Flash not ready, status {flash_status} "
+                                   f"({self.describe_status(flash_status)})")
+            logger.debug(f"Flash not ready, status {flash_status} ({self.describe_status(flash_status)})")
+            sleep(backoff)
+            backoff *= 2
+
+    # Transfers, in flash mode
+
+    def read(self, offset: int, length: int) -> bytes:
+        """One #CFLRR / #CFLRD transfer"""
+        d = self._request("#CFLRR", [f"{offset:06X}", f"{length:02X}"], "#CFLRD")
+        try:
+            reply_offset, reply_length, data = int(d.args[0], 16), int(d.args[1], 16), bytes.fromhex(d.args[2])
+        except (IndexError, ValueError) as e:
+            raise ProtocolError(f"Unexpected firmware read reply format: {str(d).strip()}") from e
+        if reply_offset != offset or reply_length != length or len(data) != length:
+            raise ProtocolError(f"Unexpected firmware read reply: requested {length} bytes at 0x{offset:06x}, "
+                                f"got {len(data)} bytes labeled {reply_length} at 0x{reply_offset:06x}")
+        return data
+
+    def write(self, offset: int, data: bytes):
+        """One #CFLWR transfer, after the status poll the updater makes before each"""
+        self.wait_for_ready()
+        self._request("#CFLWR", [f"{offset:06X}", f"{len(data):02X}", data.hex().upper()],
+                      timeout=self.WRITE_TIMEOUT)
+
+    def erase(self):
+        """Erase the firmware area and check it is blank, as the updater does before writing"""
+        self._request("#CFLER", ["000000"], terminator=True, timeout=self.ERASE_TIMEOUT)
+        self._request("#CFLCB", ["000000"], terminator=True, timeout=self.BLANK_CHECK_TIMEOUT)
+        self.wait_for_ready()
+
+    # Images
+
+    def read_image(self, progress: Progress | None = None) -> bytes:
+        """Read the whole firmware area; progress is called with (bytes done, bytes total)"""
+        self._require_layout()
+        start, end = self.address_range
+        self.enter_flash_mode()
+        image = bytearray()
+        for offset in range(start, end, self.chunk_size):
+            if progress:
+                progress(offset - start, end - start)
+            image += self.read(offset, min(self.chunk_size, end - offset))
+        if progress:
+            progress(end - start, end - start)
+        return bytes(image)
+
+    def write_image(self, data: bytes, progress: Progress | None = None):
+        """
+        Erase the firmware area and write an image to it. A shorter image is padded with
+        0xFF, erased flash. The image is written as given: see check_image().
+        """
+        self._require_layout()
+        start, end = self.address_range
+        if len(data) > end - start:
+            raise ProtocolError(f"Firmware image is {len(data)} bytes, at most {end - start} fit in "
+                                f"0x{start:06x}..0x{end - 1:06x}")
+        data = data.ljust(end - start, b"\xff")
+        self.enter_flash_mode()
+        self.erase()
+        for offset in range(start, end, self.chunk_size):
+            if progress:
+                progress(offset - start, end - start)
+            self.write(offset, data[offset - start:offset - start + self.chunk_size])
+        if progress:
+            progress(end - start, end - start)
+
+    @classmethod
+    def image_version(cls, data: bytes) -> str:
+        """The version an image names at its start, e.g. '02.04'"""
+        return data[:cls.VERSION_LENGTH].decode("ascii", "replace").strip()
+
+    def check_image(self, data: bytes) -> list[ImageCheck]:
+        """
+        What the bytes of an image tell about its fitness for this model: that it fits the
+        area, names a version, carries one of the model's flash IDs, and is not blank.
+        Nothing is sent to the radio.
+        """
+        self._require_layout()
+        start, end = self.address_range
+        size = end - start
+        version = self.image_version(data)
+        found = [flash_id for flash_id in self.flash_ids if flash_id.encode("ascii") in data]
+        has_content = any(b != 0xff for b in data[:0x1000])
+        fit = (f", {size - len(data)} bytes short, padded with 0xFF" if len(data) < size
+               else f", {len(data) - size} bytes too long" if len(data) > size else "")
+        return [
+            ImageCheck("size", len(data) <= size,
+                       f"{len(data)} bytes for 0x{start:06x}..0x{end - 1:06x} ({size} bytes){fit}"),
+            ImageCheck("version", version.replace(".", "").isdigit() and "." in version,
+                       f"image version {version!r}" if version else "no version string at the start of the image"),
+            ImageCheck("model", bool(found),
+                       f"carries the flash ID {found[0]!r}" if found
+                       else f"carries none of this model's flash IDs {self.flash_ids}"),
+            ImageCheck("content", has_content,
+                       "starts with code and tables" if has_content else "starts with erased flash"),
+        ]
 
 
 class GX1400Protocol(GenericHXProtocol):

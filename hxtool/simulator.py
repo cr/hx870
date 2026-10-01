@@ -115,6 +115,11 @@ class HXSimulator(Thread):
         self.gps_line_delay = 0.0
         self._gps_busy_until = 0.0  # the module is in the middle of a paced dump
         self._gps_pending = []  # (due time, what to do then), in order
+        # Firmware flash model (the #CFL* commands), sparse: address -> byte, 0xFF unset.
+        # A guess at how the boot block behaves, to exercise the client; not verified.
+        self.firmware = {}
+        self._flash_mode = False
+        self._named = False  # the HX870 answers #CMDNR once per power-on
 
     def run(self):
         if self.stop_running.is_set():
@@ -363,5 +368,43 @@ class HXSimulator(Thread):
                         logger.critical("CP simulator internal memory corruption after write")
                 else:
                     self._reply("#CMDER")
+            case "#CMDNR", [_name] if not self._named:
+                self._named = True
+                self._reply("#CMDOK")
+                self._reply("#CMDND", [self.type.FLASH_ID[-1]])
+                self.ignore_cmdok = True
+            case "#CFLID", [flash_id]:
+                self._reply("#CMDOK")
+                ok = flash_id.rstrip("\x00") in self.type.FLASH_ID
+                self._reply("#CFLSD", ["00" if ok else "10"])
+                self.ignore_cmdok = True
+            case "#CFLMC", [mode]:
+                self._flash_mode = mode == "01"
+                if mode == "03":
+                    self._named = False  # the radio reboots, which renews the grant
+                self._reply("#CMDOK")
+            case "#CFLSR", _:
+                self._reply("#CMDOK")
+                self._reply("#CFLSD", ["00"])
+                self.ignore_cmdok = True
+            case "#CFLER", _ if self._flash_mode:
+                self.firmware = {}
+                self._reply("#CMDOK")
+            case "#CFLCB", _ if self._flash_mode:
+                self._reply("#CMDOK")
+            case "#CFLWR", [offset, size, payload]:
+                start, length, data = int(offset, 16), int(size, 16), bytes.fromhex(payload)
+                if self._flash_mode and len(data) == length:
+                    for i, byte in enumerate(data):
+                        self.firmware[start + i] = byte
+                    self._reply("#CMDOK")
+                else:
+                    self._reply("#CMDER")
+            case "#CFLRR", [offset, size] if self._flash_mode:
+                start, length = int(offset, 16), int(size, 16)
+                data = bytes(self.firmware.get(start + i, 0xff) for i in range(length))
+                self._reply("#CMDOK")
+                self._reply("#CFLRD", [offset, size, data.hex().upper()])
+                self.ignore_cmdok = True
             case _:
                 self._reply("#CMDER")

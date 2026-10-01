@@ -71,6 +71,38 @@ bytes of the config memory directly, at most one transfer chunk at a time. It sk
 dump-edit-flash cycle for small changes, and it corrupts the device just as easily.
 See the disclaimer above.
 
+## Firmware flash access
+
+`hxtool firmware --readto FILE` reads the firmware into a file and reboots the radio, which
+then is no longer in CP mode. Verified on an HX870 with firmware 02.04: the image read is
+byte for byte the one the vendor's updater carries (two minutes for 704 kB).
+
+`hxtool firmware --writefrom FILE` assesses an image against the model (size, version
+string, the model's flash ID, content) and reports it next to the version the radio runs.
+It writes nothing. An image that fails the assessment gets a warning not to write it, and
+a non-zero exit status.
+
+With `--really` the assessment is only advice: the flash is erased, the image written and
+the radio rebooted, whatever the assessment said. The one thing `--really` cannot do is
+write an image larger than the flash area. Writing follows the vendor's updater step by
+step but has not been run against a radio yet. An image shorter than the area, as the
+vendor's are, is padded with 0xFF.
+
+The firmware area is 0xF40000..0xFEFFFF on the HX870 and on the HX890, per the write maps
+of the vendor's updaters for the two. The HX891BT has no updater; hxtool takes the HX890's
+area for it, which is an assumption until a read from an HX891BT has been looked at. So far
+only the HX870 has been read. The image assessment (version string at the start, flash ID
+inside) follows the layout of the HX870 images and is equally unverified for the others.
+The GX1400 has no firmware functions in hxtool.
+
+For users of the library: the model instance carries the handler as `hx.firmware`
+(`read_image()`, `check_image()`, `write_image()`), next to `hx.config` and `hx.gps`. The
+radio grants the flash-mode handshake once per power-on; the handler enters flash mode when
+a transfer needs it and stays there, so a write and a read back fit into one session.
+`hx.reboot()` ends it: leaving flash mode restarts the radio, and it is also the one known
+way to restart a radio out of CP mode by software. `tools/fwextract.py` extracts an image
+from a vendor updater to compare against.
+
 ## HX870 USB protocol
 
 The hardware exposes three USB endpoints, EP0, EP1, and EP2. EP0 is a control endpoint.
@@ -255,11 +287,15 @@ Radio starts repeating messages if you don't acknowledge with #CMDOK or similar,
   A wrong ID is answered with `#CFLSD 10`, after which the radio replies `#CMDER` until `#CMDNR` is sent again;
   the right one with `#CFLSD 00`. The flasher follows every command with a `;` byte.
 * `#CFLMC 01` - CommandMd, sent by firmware flasher before #CFLER
-* `#CFLMC 03` - CommandMdr, sent by firmware flasher after last #CFLWR
-* `#CFLRR ADDRESS6 LENGTH` - Read from firmware flash, answered with `#CFLRD`. The vendor's updater
-  can build the request and parse the reply but never sends it. Untested.
+* `#CFLMC 02` - Sent by the HX890 firmware flasher if `#CFLMC 03` is not acknowledged
+* `#CFLMC 03` - CommandMdr, sent by firmware flasher after last #CFLWR. The radio reboots
+* `#CFLRR ADDRESS6 LENGTH` - Read from firmware flash, answered with `#CMDOK` and `#CFLRD ADDRESS6 LENGTH
+  <HEXBYTES>`, which the host acknowledges with `#CMDOK`. The vendor's updater can build the request
+  and parse the reply but never sends it. Verified on an HX870 (firmware 02.04), 0x80 bytes per request.
 * `#CFLRD` - Reply to `#CFLRR`. As a command the radio says #CMDUN
-* `#CFLSD 10` - Radio status response observed during hardware detection
+* `#CFLSD STATUS` - Flash status, `00` is ready. Bits: 01 blank error, 02 erase error, 04 program error,
+  08 read error, 10 ID error (observed during hardware detection), 20 area error, 40 unknown, 80 busy
+* `#CFLSL 00` - Sent by the HX890 firmware flasher for models with an AIS unit, not for the HX890
 * `#CFLSR 00` - CheckStatus
 * `#CFLWR ADDRESS6 LENGTH <HEXBYTES>` - Write to firmware flash
 
@@ -283,22 +319,44 @@ Radio starts repeating messages if you don't acknowledge with #CMDOK or similar,
 ### Firmware update sequence
 
 Read from the vendor's updater for the HX870 (a .NET program, versions 02.03 and 02.04).
-Not exercised with `hxtool`.
+Steps 2 to 4 and the read are verified on an HX870 with firmware 02.04 (`hxtool firmware
+--readto`); the erase and write steps are not.
 
 1. `P`, `0`, `ACMD:002`, `#CVRRQ` to show the installed version.
-2. `#CMDNR STANDARD HORIZON`, answered with `#CMDND`.
-3. `#CFLID AM057N` (padded to ten bytes with NUL); if that is refused, a pause of a
-   second, `#CMDNR` again and `#CFLID AM057N2`.
-4. A pause, `#CFLMC 01`, then `#CMDSY` twice.
-5. `#CFLER 000000` (erase), `#CFLCB 000000` (blank check).
+2. `#CMDNR STANDARD HORIZON`, answered with `#CMDOK` and `#CMDND <flash ID>`: the radio names
+   its own ID (`AM057N2` on the HX870 here). The radio grants this once per power-on; a
+   second `#CMDNR` gets `#CMDER`.
+3. `#CFLID <flash ID>` (padded to ten bytes with NUL), answered with `#CMDOK` and `#CFLSD 00`;
+   a wrong ID gets `#CFLSD 10`. The updater then pauses a second, repeats `#CMDNR` and tries
+   its second ID.
+4. A pause, `#CFLMC 01`, answered with `#CMDOK` and `#CFLSD 00`, then `#CMDSY` twice.
+5. `#CFLER 000000` (erase), `#CFLCB 000000` (blank check), `#CFLSR 00` until `#CFLSD 00`.
 6. The image for 0xF40000..0xFEFFFF in chunks of 0x80 bytes: `#CFLSR 00` until
    `#CFLSD 00`, then `#CFLWR ADDRESS6 80 <HEXBYTES>`, answered with `#CMDOK`.
-7. A pause, `#CFLMC 03`.
+   For a read, `#CFLRR ADDRESS6 80` instead, answered with `#CFLRD`.
+7. A pause, `#CFLMC 03`, answered with `#CMDOK`. The radio reboots.
 
-Each of the commands from step 2 on is followed by a `;` byte. Timeout 2000 ms, five
-attempts per command. The updater carries the image as S-records with six hex digits
-swapped; `tools/fwextract.py` reads it out. The updater for the HX890 is a different,
-native program and holds its image encrypted.
+Each of the commands from step 2 on is followed by a `;` byte, except the status poll and
+the transfers. Timeout 2000 ms, five attempts per command. The updater carries the image as
+S-records with six hex digits swapped; `tools/fwextract.py` reads it out.
+
+The radio acknowledges an erase, a blank check and a write when the flash operation is
+done, with `#CMDOK` and `#CFLSD <status>` together.
+
+The updater for the HX890 (version 02.00) is a different, native program. It sends the same
+sequence with the flash ID `AM063N` and the same chunks of 0x80 bytes, and differs in this:
+
+* It writes four blocks instead of one run, and leaves the rest of the erased area alone:
+  0xF40000..0xFC9E7F, 0xFEEE00..0xFEF77F, 0xFEF800..0xFEFEFF and 0xFEFF80..0xFEFFFF.
+  It holds the block contents in an encoded form, which `tools/fwextract.py` does not read.
+* It waits longer for the acknowledgements: 10 s for the erase, 5 s for the blank check,
+  8 s for a write, 5 s for the closing `#CFLMC 03`.
+* If the closing `#CFLMC 03` is not acknowledged, it sends `#CFLMC 02`.
+* It has a repair function for a radio left in flash mode, which sends `#CFLMC 03`.
+* Before the version request it can send `#CFLSL` to select a unit in a model with an AIS
+  unit (it knows a `#CMDND AM059N-AIS`). For the HX890 that step is skipped.
+* It names the bits of the status byte in `#CFLSD`: 01 blank error, 02 erase error,
+  04 program error, 08 read error, 10 ID error, 20 area error, 40 unknown, 80 busy.
 
 ### NMEA-style messages
 
