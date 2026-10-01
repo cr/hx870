@@ -67,9 +67,9 @@ class GpsLogCommand(CliCommand):
                 logger.info(f"Received {len(silent.log_data)} bytes of raw log data from handset")
                 result = max(self.export(silent.log_data), result)
             logger.critical(f"GPS module lost ({silent})")
-            logger.error("Switch the radio off and on again in CP mode, then run `hxtool gpslog` without --fast: "
-                         "it looks for the GPS module at every speed and brings it back to 9600 baud. "
-                         "Until that has worked the radio may not get a position fix.")
+            logger.error("Reboot the radio: `hxtool firmware --reboot`, or switch it off and on. Nothing the host "
+                         "can send is known to bring the module back; the radio sets it up again when it starts. "
+                         "Until then the radio may not get a position fix.")
             return result
 
     def gps_log(self, gps) -> int:

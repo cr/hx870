@@ -359,8 +359,19 @@ def test_gpslog_silent_module_keeps_the_log_and_says_what_to_do(tmpdir, kill_sim
     assert main(["--simulator", "-t", "0", "gpslog", "--fast", "--erase", "--raw", str(log_file)]) != 0
     assert log_file.read_binary() == SAMPLE_LOG, "the log was read completely before the module fell silent"
     errors = [line for line in capsys.readouterr().err.splitlines() if " ERROR " in line]
-    assert any("off and on" in line and "CP mode" in line for line in errors), "an instruction, not just a timeout"
+    assert any("Reboot the radio" in line and "hxtool firmware --reboot" in line for line in errors), \
+        "an instruction, not just a timeout"
     assert all(sim.gps_log == SAMPLE_LOG for sim in sims), "nothing is erased"
+
+
+def test_gpslog_module_silent_from_the_start_says_to_reboot(kill_sims, monkeypatch, capsys):
+    # The locked state as it is met by any later run: no answer at any speed, before anything was read
+    monkeypatch.setattr(MediaTekProtocol, "_sync_when_idle", lambda self, patience=180: False)
+    assert main(["--simulator", "-t", "0", "gpslog", "--print"]) != 0
+    log = capsys.readouterr().err
+    assert "CRITICAL GPS module lost (GPS module does not answer at any speed)" in log
+    assert any("Reboot the radio" in line and "hxtool firmware --reboot" in line
+               for line in log.splitlines() if " ERROR " in line)
 
 
 @pytest.fixture(name="busy_sim")

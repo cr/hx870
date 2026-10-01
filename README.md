@@ -233,8 +233,9 @@ and a log transfer then runs five to six times faster. `hxtool gpslog` reads at 
 on every model. `--fast` switches up for the transfer and always back to 9600, which the
 radio's firmware expects, and checks that the module answers there. It is unstable for
 the reasons below: a failed fast transfer is an error and is not repeated at 9600, and if
-the module answers at no speed afterwards, `hxtool` says so, saves the log if it had been
-read completely, and asks for the radio to be restarted in CP mode.
+the module answers at no speed, then or at the start of any later run, `hxtool` says so,
+saves the log if it had been read completely, and tells to reboot the radio
+(`hxtool firmware --reboot`, or off and on).
 
 How the radio handles it, read from the HX870's firmware 02.03 and confirmed by
 measurement on 02.04:
@@ -283,7 +284,13 @@ What goes wrong at the high speed (HX870, several hundred switches):
 * After a complete fast transfer, the switch back to 9600 can leave the module silent for
   good: no speed brings an answer any more. Seen once on the HX870 (after about 450 pairs
   of switches; switching the radio off and on cured it) and once on the HX891BT (after
-  its fourth fast transfer). Not understood. The vendor's software never switches back.
+  its fourth fast transfer; a reboot cured it). Not understood. The radio's GPS task waits
+  for its transmitter in two places without a timeout and drops everything the host sends
+  for the module meanwhile, which would look like this, but no way into that was found in
+  the code. Nothing the host can send is known to end the state: a changed GPS setting
+  would restart the radio's GPS sequence, but a config write only reaches the EEPROM
+  (tried on the HX870), and the GPS power pin is out of the host's reach in CP mode. The
+  vendor's software never switches back.
 * The module cannot be stopped in the middle of a log dump: after an interrupted read it
   goes on sending for the rest of the dump (ten seconds per 4 kB sector at 9600 baud).
   Its output shares the line with the replies to `#` commands, so `hxtool` skips GPS

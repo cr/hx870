@@ -17,7 +17,10 @@ class InternalError(Exception):
 
 
 class GPSModuleSilent(TimeoutError):
-    """The GPS module answers at none of the speeds the radio can be switched to"""
+    """
+    The GPS module answers at none of the speeds the radio can be switched to. No command is
+    known that ends this state; a restart of the radio does (the model's reboot()).
+    """
 
     log_data: bytes | None = None  # the log, if it had been read completely before
 
