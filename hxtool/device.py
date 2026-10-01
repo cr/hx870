@@ -8,6 +8,7 @@ from typing import NamedTuple
 from collections.abc import Iterable
 
 from .config import HX870Config, HX890Config, HX891Config, GX1400Config
+from .firmware import GenericHXFirmware
 from .nmea import HX870NMEAProtocol, HX890NMEAProtocol
 from .protocol import FirmwareProtocol, GenericHXProtocol, GX1400Protocol, MediaTekProtocol, ProtocolError, \
     ReadMagicProtocol
@@ -169,14 +170,7 @@ class HX870:
     config_model = HX870Config
     nmea_model = HX870NMEAProtocol
     gps_model = MediaTekProtocol
-    firmware_model = FirmwareProtocol
-
-    # Firmware flash area (start, end-exclusive) and transfer chunk, from the write maps
-    # of the vendor's updaters for the HX870 and the HX890, which agree. The HX891BT has
-    # no updater and inherits them from the HX890; an image read from one fits. None
-    # where the area is unknown, and the firmware handler then transfers no images.
-    firmware_range = (0xf40000, 0xff0000)
-    firmware_chunk = 0x80
+    firmware_model = GenericHXFirmware
 
     def __init__(self, tty, identified=False):
         self.tty = tty
@@ -194,8 +188,7 @@ class HX870:
                 self.config = self.config_model(self.comm)
                 self.nmea = None
                 self.gps = self.gps_model(self.comm)
-                self.firmware = self.firmware_model(self.comm, self.config_model.FLASH_ID,
-                                                    self.firmware_range, self.firmware_chunk)
+                self.firmware = self.firmware_model(FirmwareProtocol(self.comm), self.config_model.FLASH_ID)
                 fw = self.config.firmware_version()
                 logger.info(f"Device on {self.tty} is {self.handle} in CP mode, firmware version {fw}")
             elif self.comm.nmea_mode:
@@ -230,14 +223,14 @@ class HX870:
         if self.firmware is None:
             raise ProtocolError(f"{self.handle} on {self.tty} cannot be rebooted from its current mode")
         logger.info(f"Rebooting {self.handle} on {self.tty}")
-        self.firmware.reboot()
+        self.firmware.p.reboot()
 
     def poweroff(self):
         """Switch the radio off. Like the restart, this leads through firmware flash mode."""
         if self.firmware is None:
             raise ProtocolError(f"{self.handle} on {self.tty} cannot be switched off from its current mode")
         logger.info(f"Switching off {self.handle} on {self.tty}")
-        self.firmware.power_off()
+        self.firmware.p.poweroff()
 
     @classmethod
     def simulators(cls) -> Iterable[Candidate]:
@@ -299,7 +292,7 @@ class GX1400(HX870):
     config_model = GX1400Config
     nmea_model = None
     gps_model = None
-    firmware_range = None
+    firmware_model = None
 
     def init_config(self):
         # A serial link has no USB identity, so verify we're talking to a GX1400

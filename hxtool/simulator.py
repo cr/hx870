@@ -117,7 +117,10 @@ class HXSimulator(Thread):
         self._gps_pending = []  # (due time, what to do then), in order
         # Firmware flash model (the #CFL* commands), sparse: address -> byte, 0xFF unset.
         # A guess at how the boot block behaves, to exercise the client; not verified.
+        # Mode change, erase, blank check and write are answered with #CMDOK and the flash
+        # status, as in the USB capture of an HX870 firmware update.
         self.firmware = {}
+        self.flash_status = "00"  # what the flash operations report; for tests
         self._flash_mode = False
         self.powered_off = False  # #CFLMC 02 switches the radio off
         self._named = False  # the HX870 answers #CMDNR once per power-on
@@ -332,6 +335,11 @@ class HXSimulator(Thread):
                 self.gps_log = b""
                 self._reply("$PMTK", ["001", "184", "3"])
 
+    def _reply_flash_status(self, status=None):
+        self._reply("#CMDOK")
+        self._reply("#CFLSD", [status or self.flash_status])
+        self.ignore_cmdok = True
+
     def _process_cp_message(self, msg):
         logger.debug(f"CP simulator processing message {msg}")
         if self.powered_off:
@@ -377,32 +385,32 @@ class HXSimulator(Thread):
                 self._reply("#CMDND", [self.type.FLASH_ID[-1]])
                 self.ignore_cmdok = True
             case "#CFLID", [flash_id]:
-                self._reply("#CMDOK")
-                ok = flash_id.rstrip("\x00") in self.type.FLASH_ID
-                self._reply("#CFLSD", ["00" if ok else "10"])
-                self.ignore_cmdok = True
+                # The radio accepts the ID it names itself by (an HX870 that is AM057N2
+                # answers AM057N with status 10)
+                ok = flash_id.rstrip("\x00") == self.type.FLASH_ID[-1]
+                self._reply_flash_status("00" if ok else "10")
+            case "#CFLMC", ["01"]:
+                self._flash_mode = True
+                self._reply_flash_status()
             case "#CFLMC", ["02"] if self._flash_mode:
                 self.powered_off = True
-            case "#CFLMC", [mode]:
-                self._flash_mode = mode == "01"
-                if mode == "03":
-                    self._named = False  # the radio reboots, which renews the grant
+            case "#CFLMC", ["03"] if self._flash_mode:
+                self._flash_mode = False
+                self._named = False  # the radio reboots, which renews the grant
                 self._reply("#CMDOK")
             case "#CFLSR", _:
-                self._reply("#CMDOK")
-                self._reply("#CFLSD", ["00"])
-                self.ignore_cmdok = True
+                self._reply_flash_status()
             case "#CFLER", _ if self._flash_mode:
                 self.firmware = {}
-                self._reply("#CMDOK")
+                self._reply_flash_status()
             case "#CFLCB", _ if self._flash_mode:
-                self._reply("#CMDOK")
-            case "#CFLWR", [offset, size, payload]:
+                self._reply_flash_status()
+            case "#CFLWR", [offset, size, payload] if self._flash_mode:
                 start, length, data = int(offset, 16), int(size, 16), bytes.fromhex(payload)
-                if self._flash_mode and len(data) == length:
+                if len(data) == length:
                     for i, byte in enumerate(data):
                         self.firmware[start + i] = byte
-                    self._reply("#CMDOK")
+                    self._reply_flash_status()
                 else:
                     self._reply("#CMDER")
             case "#CFLRR", [offset, size] if self._flash_mode:

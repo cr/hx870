@@ -45,8 +45,9 @@ def format_record(kind: int, address: int, data: bytes = b"") -> str:
 
 class Image:
     """
-    A firmware image: segments in address order (adjoining ones merged, a later one
-    overlaying an earlier one), the text of the header record, and the entry address.
+    A firmware image: segments in address order (adjoining ones merged; where two overlap,
+    the one at the higher address overlays the other), the text of the header record, and
+    the entry address.
     """
 
     def __init__(self, segments: Iterable[Segment] = (), header: str = "", entry: int | None = None):

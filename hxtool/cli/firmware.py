@@ -40,8 +40,9 @@ class FirmwareCommand(CliCommand):
                             action="store_true")
 
         parser.add_argument("--reboot",
-                            help="restart the handset at the end. Without it a read or write leaves the "
-                                 "handset in flash mode, where it takes further firmware commands only",
+                            help="restart the handset when the command went through. Without it a read or "
+                                 "write leaves the handset in flash mode, where it takes further firmware "
+                                 "commands only",
                             action="store_true")
 
     def run(self):
@@ -61,22 +62,22 @@ class FirmwareCommand(CliCommand):
             logger.critical("Specify --readto, --writefrom or --reboot")
             return 10
 
-        try:
-            if self.args.readto is not None:
-                return self.read(hx)
-            if self.args.writefrom is not None:
-                return self.write(hx)
-            return 0
-        finally:
-            if self.args.reboot:
-                hx.reboot()
-            elif hx.firmware.active:
-                logger.info("Handset is left in flash mode. `hxtool firmware --reboot` restarts it")
+        result = 0
+        if self.args.readto is not None:
+            result = self.read(hx)
+        elif self.args.writefrom is not None:
+            result = self.write(hx)
+
+        if self.args.reboot and result == 0:
+            hx.reboot()
+        elif hx.firmware.p.active:
+            logger.info("Handset is left in flash mode. `hxtool firmware --reboot` restarts it")
+        return result
 
     @staticmethod
     def log_placement(hx, image: Image) -> None:
         """A flat binary carries no addresses, so the log says where it lies"""
-        start, size = image.segments[0].address, len(image.to_binary())
+        start, size = image.segments[0].address, image.size
         flash = hx.firmware.flash_address(start)
         logger.info(f"Flat binary: {size} bytes for 0x{start:08x}..0x{start + size - 1:08x} "
                     f"(flash address 0x{flash:06x}..0x{flash + size - 1:06x})")
@@ -92,8 +93,6 @@ class FirmwareCommand(CliCommand):
             with open(self.args.readto, "wb") as f:
                 f.write(image.to_binary())
             self.log_placement(hx, image)
-            logger.info(f"To load it where it lies: rizin -a rx -b 32 -m 0x{image.segments[0].address:08x} "
-                        f"{self.args.readto}")
             return 0
 
         # Erased flash is left out: a write erases the area and writes what the records hold

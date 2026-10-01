@@ -90,15 +90,17 @@ been run against a radio yet.
 A read or write leaves the radio in flash mode. There it answers the firmware commands and
 nothing else: no config access, no GPS, and no answer to the `?` that tells CP mode, so
 hxtool takes a radio left in flash mode for one in NMEA mode. `--reboot` restarts the radio
-at the end of the command (on its own: `hxtool firmware --reboot`), after which it is in its
-normal mode, not CP mode. Without it, switch the radio off and on.
+when the command went through (on its own: `hxtool firmware --reboot`), after which it is in
+its normal mode, not CP mode. After a failure the radio is left as it is. Without `--reboot`,
+switch the radio off and on.
 
 The file is in Motorola S-records, the form the vendor's updaters hold their images in,
 whatever its name. S-records carry the address of every byte, so the image itself says
 where it goes, and a write sends only the chunks the image has bytes in; the rest of the
 erased area is left alone. A read leaves erased flash out of the file. `--binary` is the
 override, for both directions: the file is then the firmware area as it lies, from its
-first byte, and the log says where that is (`rizin -a rx -b 32 -m 0xfff40000 FILE`).
+first byte, and the log says where that is (to load it there:
+`rizin -a rx -b 32 -m 0xfff40000 FILE`).
 
 The firmware area is 0xF40000..0xFEFFFF (0xFFF40000..0xFFFEFFFF to the MCU and in the
 S-records; the flash commands carry the low 24 bits) on the HX870 and the HX890, per the
@@ -117,14 +119,17 @@ What the images of the HX870 (02.03, 02.04) and the HX891BT (1.00) have in commo
   HX890's, on the HX891BT. The ID the radio names itself by (`AM057N2`, `AM070N`) is
   elsewhere in the image.
 
-For users of the library: the model instance carries the handler as `hx.firmware`
-(`read_image()`, `check_image()`, `write_image()`), next to `hx.config` and `hx.gps`. An
-image is an `hxtool.srec.Image`: address segments, read from and written to S-records or
-flat binary. The radio grants the flash-mode handshake once per power-on; the handler
-enters flash mode when a transfer needs it and stays there, so a write and a read back fit
-into one session. Flash mode outlasts the connection: on an HX870 and an HX891BT a second
-connection read the whole area again without a handshake (a handler made with
-`active = True`), identical to the first read.
+For users of the library: the model instance carries the firmware handler as `hx.firmware`
+(`read_image()`, `check_image()`, `write_image()`), next to `hx.config` and `hx.gps`. It
+knows where the model's firmware lies (`hxtool.firmware`). The flash session below it is
+`hx.firmware.p`, a `FirmwareProtocol` with nothing model specific in it:
+`enter_flash_mode()`, `read()`, `write()`, `erase()`, `reboot()`, `poweroff()`. An image is
+an `hxtool.srec.Image`: address segments, read from and written to S-records or flat binary.
+The radio grants the flash-mode handshake once per power-on; the session enters flash mode
+when a transfer needs it and stays there, so a write and a read back fit into one session.
+Flash mode outlasts the connection: on an HX870 and an HX891BT a second connection read the
+whole area again without a handshake (a `FirmwareProtocol` made with `active = True`),
+identical to the first read.
 `hx.reboot()` ends flash mode by restarting the radio, and `hx.poweroff()` by switching it
 off; both enter flash mode first if need be, and they are the known ways to restart or
 switch off a radio in CP mode by software. `tools/fwextract.py` extracts the images from a
@@ -372,6 +377,12 @@ whole area, erased chunks included.
 
 The radio acknowledges an erase, a blank check and a write when the flash operation is
 done, with `#CMDOK` and `#CFLSD <status>` together.
+
+hxtool follows this sequence, with two differences. It offers the flash ID the radio has
+just named in `#CMDND`, the one the radio accepts, instead of a list of its own. And it
+acknowledges every `#CFLSD` with `#CMDOK`, like any data reply; the updater only does so
+after `#CFLSR`, and the radio repeats the others. A status other than `00` after `#CFLID`,
+`#CFLMC 01`, an erase, a blank check or a write is an error.
 
 The updater for the HX890 (version 02.00) is a different, native program. It sends the same
 sequence with the flash ID `AM063N` and the same chunks of 0x80 bytes, and differs in this:
