@@ -50,3 +50,33 @@ def test_program_without_records(tmp_path, capsys):
     assert fwextract.main([str(program), str(tmp_path / "fw")]) != 0
     assert "no firmware records" in capsys.readouterr().err
     assert not (tmp_path / "fw.srec").exists() and not (tmp_path / "fw.bin").exists()
+
+
+def block_updater(blocks: dict[int, bytes]) -> bytes:
+    """A program file holding the image as the native HX890 updater does: a key, then the table of blocks"""
+    key = bytes((n * 37 + 11) & 0xff for n in range(0x80))
+    table = b""
+    for start, data in blocks.items():
+        name = bytes(ord(digit) | 0x80 for digit in f"{start:06X}")
+        record = bytearray(name.ljust(0x34, b"\x80"))
+        for field, value in (0x0c, start), (0x1c, start + len(data)), (0x20, len(data)):
+            record[field:field + 4] = value.to_bytes(4, "little")
+        table += bytes(record) + bytes(byte ^ key[n % 0x80] for n, byte in enumerate(data))
+    return b"MZ" + bytes(64) + b"Update Version : 02.00\x00" + key + table + b"\xff" * 64
+
+
+def test_extracts_the_blocks_of_the_hx890_updater(tmp_path, capsys):
+    blocks = {0xf40000: b"   2.00    \x00CBTC\x00" + bytes(range(0x90)),
+              0xfeff80: b"\xff" * 0x70 + b"AM063N\x00" + b"\xff" * 9}
+    program = tmp_path / "Firmware Update for HX890.exe"
+    program.write_bytes(block_updater(blocks))
+
+    assert fwextract.main([str(program), str(tmp_path / "fw")]) == 0
+
+    # The library reads the records; the blocks lie where the MCU has them
+    image = Image.from_srec((tmp_path / "fw.srec").read_bytes())
+    assert image.segments == [Segment(0xff000000 | start, data) for start, data in blocks.items()]
+    assert image.header == "AM063N"
+    assert (tmp_path / "fw.bin").read_bytes() == image.to_binary()
+    out = capsys.readouterr().out
+    assert "header 'AM063N'" in out and "version '2.00'" in out and "2 segments" in out and "no entry address" in out

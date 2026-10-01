@@ -3,9 +3,10 @@
 Extract the firmware image from a Standard Horizon firmware updater (e.g. "Firmware Update HX870_V204.exe").
 
 The .NET updaters for the HX870 carry the firmware as Motorola S-records in which six hex digits are swapped
-(0 with F, 4 with 7, 5 with 6). This reads the records out of the program file, undoes the swap and writes
-the image twice: as S-records, which say where the image goes and which `hxtool firmware` takes, and as a
-flat binary for a disassembler, with the addresses that needs printed.
+(0 with F, 4 with 7, 5 with 6). The native updater for the HX890 carries it as a table of blocks, each byte
+XORed with a key of 128 bytes that stands before the table. This reads the image out of the program file,
+decodes it and writes it twice: as S-records, which say where the image goes and which `hxtool firmware`
+takes, and as a flat binary for a disassembler, with the addresses that needs printed.
 
 Nothing is executed and no radio is involved.
 """
@@ -39,10 +40,58 @@ def parse(record: str) -> tuple[str, int, bytes]:
     return kind, int.from_bytes(body[1:1 + width], "big"), body[1 + width:-1]
 
 
+def format_record(kind: int, address: int, data: bytes = b"") -> str:
+    width = ADDRESS_BYTES.get(str(kind), 2 if kind == 0 else 4)
+    body = bytes([width + len(data) + 1]) + address.to_bytes(width, "big") + data
+    return f"S{kind}{body.hex().upper()}{(sum(body) ^ 0xff) & 0xff:02X}"
+
+
+# The HX890 updater's block table. A block record starts with the address of the block's first S-record as six
+# hex digits with bit 7 set, padded with 0x80; then, little endian, the block's start at +0x0C, its end
+# (exclusive) at +0x1C and its length at +0x20; the content from +0x34, and the next record after it. A 0xFF
+# ends the table. The key is the 128 bytes before the first record, applied anew to every block. The flash
+# commands carry the low 24 bits of the MCU's addresses, so the blocks lie at 0xFF000000 above their starts.
+BLOCK_NAME = re.compile(rb"[\xb0-\xb9\xc1-\xc6]{6}\x80{4}")
+KEY_LENGTH = 0x80
+BLOCK_CONTENT = 0x34
+MCU_BASE = 0xff000000
+ROW = 16
+
+
+def extract_blocks(program: bytes) -> tuple[list[str], dict[int, bytes], str, int | None]:
+    """extract() for the block table of the HX890 updater; the records are made up, 16 bytes to each"""
+    table = BLOCK_NAME.search(program)
+    if not table or table.start() < KEY_LENGTH:
+        raise ValueError("no firmware records found")
+    position = table.start()
+    key = program[position - KEY_LENGTH:position]
+    chunks = {}
+    while position + BLOCK_CONTENT <= len(program) and program[position] != 0xff:
+        start, end, length = (int.from_bytes(program[position + field:position + field + 4], "little")
+                              for field in (0x0c, 0x1c, 0x20))
+        content = program[position + BLOCK_CONTENT:position + BLOCK_CONTENT + length]
+        if end - start != length or len(content) != length:
+            raise ValueError(f"block table at 0x{table.start():X} is not as expected")
+        chunks[MCU_BASE | start] = bytes(byte ^ key[n % KEY_LENGTH] for n, byte in enumerate(content))
+        position += BLOCK_CONTENT + length
+    # The image names its flash ID in the last 16 bytes of the firmware area
+    last = chunks[max(chunks)]
+    header = last[-16:].split(b"\x00")[0].decode("ascii", "replace") if last[-16:-10].isalnum() else ""
+    records = [format_record(0, 0, header.encode("ascii"))]
+    for address in sorted(chunks):
+        records += [format_record(3, address + offset, chunks[address][offset:offset + ROW])
+                    for offset in range(0, len(chunks[address]), ROW)]
+    records.append(format_record(7, 0))
+    return records, chunks, header, None
+
+
 def extract(program: bytes) -> tuple[list[str], dict[int, bytes], str, int | None]:
     """(S-records, data by address, header text, entry address) of the firmware in an updater program"""
     records, chunks, header, entry = [], {}, "", None
-    for scrambled in scrambled_records(program):
+    found = scrambled_records(program)
+    if not found:
+        return extract_blocks(program)
+    for scrambled in found:
         record = scrambled.translate(SWAP)
         kind, address, data = parse(record)
         records.append(record)

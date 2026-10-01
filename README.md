@@ -119,10 +119,11 @@ HX870's none. Firmware and boot ROM are read in one flash session, in either ord
 The firmware area is 0xF40000..0xFEFFFF (0xFFF40000..0xFFFEFFFF to the MCU and in the
 S-records; the flash commands carry the low 24 bits) on the HX870 and the HX890, per the
 write maps of the vendor's updaters, and on the HX891BT, which has no updater: the image
-read from one fills that area the same way. No HX890 has been read. The GX1400 has no
-firmware functions in hxtool.
+read from one fills that area the same way. No HX890 has been read; its image is known
+from the updater. The GX1400 has no firmware functions in hxtool.
 
-What the images of the HX870 (02.03, 02.04) and the HX891BT (1.00) have in common:
+What the images of the HX870 (02.03, 02.04), the HX890 (2.00) and the HX891BT (1.00) have
+in common:
 
 * The version, blank padded to eleven bytes, at the start of the area, followed by the
   table of `#` commands.
@@ -405,7 +406,8 @@ sequence with the flash ID `AM063N` and the same chunks of 0x80 bytes, and diffe
 
 * It writes four blocks instead of one run, and leaves the rest of the erased area alone:
   0xF40000..0xFC9E7F, 0xFEEE00..0xFEF77F, 0xFEF800..0xFEFEFF and 0xFEFF80..0xFEFFFF.
-  It holds the block contents in an encoded form, which `tools/fwextract.py` does not read.
+  It holds the blocks in a table, each byte XORed with a key of 128 bytes that stands
+  before the table and starts anew with every block; `tools/fwextract.py` reads them out.
 * It waits longer for the acknowledgements: 10 s for the erase, 5 s for the blank check,
   8 s for a write, 5 s for the closing `#CFLMC 03`.
 * If the closing `#CFLMC 03` is not acknowledged, it sends `#CFLMC 02`, which switches the
@@ -497,10 +499,13 @@ into the protocol dialogue (`print`) or the memory image it transferred (`dump`)
 needs Wireshark's `tshark`.
 
 `tools/fwextract.py UPDATER.exe IMAGE` extracts the firmware image from one of the
-vendor's firmware updaters for the HX870, as `IMAGE.srec` (the updater's own S-records,
-which `hxtool firmware --writefrom` takes) and as `IMAGE.bin` (flat, for a disassembler;
-the tool prints its load address, entry address and segments). The binary for version
-02.03 is identical to the image the updater sends to the radio.
+vendor's firmware updaters for the HX870 (02.03, 02.04) or the HX890 (2.00), as
+`IMAGE.srec` (S-records, which `hxtool firmware --writefrom` takes) and as `IMAGE.bin`
+(flat, for a disassembler; the tool prints its load address, entry address and segments).
+For the HX870 the records are the updater's own; for the HX890, whose updater holds
+blocks and no records, they are made up from the blocks. The binary for HX870 version
+02.03 is identical to the image the updater sends to the radio. The script stands alone:
+it needs the updater program and nothing of hxtool.
 
 ## Testing notes
 
