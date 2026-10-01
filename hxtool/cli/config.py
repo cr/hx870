@@ -2,6 +2,7 @@ from logging import getLogger
 from os.path import abspath
 
 import hxtool
+from . import ui
 from .base import CliCommand
 from ..protocol import ProtocolError
 
@@ -53,7 +54,8 @@ class ConfigCommand(CliCommand):
         if self.args.dump is not None:
             logger.info("Reading config flash from handset")
             try:
-                data = hx.config.config_read(progress=True)
+                with ui.progress("Reading config", "bytes") as progress:
+                    data = hx.config.config_read(progress=progress)
             except ProtocolError as e:
                 logger.error(e)
                 ret = 10
@@ -69,8 +71,9 @@ class ConfigCommand(CliCommand):
                 data = f.read()
                 logger.info("Writing config to handset")
                 try:
-                    hx.config.config_write(data, force=self.args.force, write_flash_id=self.args.force_flashid,
-                                           progress=True)
+                    with ui.progress("Writing config", "bytes") as progress:
+                        hx.config.config_write(data, force=self.args.force, write_flash_id=self.args.force_flashid,
+                                               progress=progress)
                 except ProtocolError as e:
                     logger.error(e)
                     ret = 10

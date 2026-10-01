@@ -4,10 +4,10 @@ from argparse import ArgumentParser
 from logging import getLogger
 from sys import exit, argv, stdout
 
-import coloredlogs
 from importlib.metadata import version
 
 import hxtool.cli
+from hxtool.cli import ui
 from hxtool.protocol import ProtocolError
 from hxtool.simulator import HXSimulator
 
@@ -67,10 +67,7 @@ def main(main_args=None):
     args = get_args(main_args)
 
     # Logging is configured here and not at import, so that the package stays quiet as a library
-    if args.debug:
-        coloredlogs.install(level="DEBUG", fmt="%(asctime)s %(levelname)s %(name)s %(message)s")
-    else:
-        coloredlogs.install(level="INFO", fmt="%(asctime)s %(levelname)s %(message)s")
+    ui.setup_logging(args.debug)
 
     logger.debug(f"Command arguments: {args}")
 

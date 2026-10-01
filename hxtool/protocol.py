@@ -3,6 +3,7 @@ from logging import getLogger
 from time import time, sleep
 
 from . import tty as hxtty
+from .progress import Progress
 
 logger = getLogger(__name__)
 
@@ -426,7 +427,8 @@ class MediaTekProtocol:
             "full_stop": full_stop
         }
 
-    def read_log(self, progress=False) -> bytes:
+    def read_log(self, progress: Progress | None = None) -> bytes:
+        """Read the raw GPS log; progress is called with (lines received, lines total)"""
         raw_log_data = b''
         self.sync()
 
@@ -447,9 +449,8 @@ class MediaTekProtocol:
         # What follows is a flash memory dump of the log data
         # LOX messages with first arg "1" indicate a log dump line
         # LOX message with first arg "2" indicates end of log
-        last_progress_report = time()
         if progress:
-            logger.info(f"0 / {number_of_lines} blocks (0%)")
+            progress(0, number_of_lines)
         while True:
             r = self.receive()
             if r.type != "$PMTK" or len(r.args) < 2 or r.args[0] != "LOX" or r.args[1] not in ("1", "2"):
@@ -462,13 +463,8 @@ class MediaTekProtocol:
             raw_waypoint_data = r.args[3:]
             for word in raw_waypoint_data:
                 raw_log_data += bytes.fromhex(word)
-            if progress and time() - last_progress_report > 4:
-                percent_done = int(100.0 * len(received_line_numbers) / number_of_lines)
-                logger.info(f"{len(received_line_numbers)} / {number_of_lines} blocks ({percent_done}%)")
-                last_progress_report = time()
-
-        if progress:
-            logger.info(f"{number_of_lines} / {number_of_lines} blocks (100%)")
+            if progress:
+                progress(len(received_line_numbers), number_of_lines)
 
         # Did we receive the log in order and completely?
         if received_line_numbers != list(range(number_of_lines)):

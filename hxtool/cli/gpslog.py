@@ -6,6 +6,7 @@ from logging import getLogger
 from os.path import abspath
 
 import hxtool
+from . import ui
 from .base import CliCommand
 from hxtool.locus import FixQuality, Locus, LocusError
 
@@ -69,7 +70,8 @@ class GpsLogCommand(CliCommand):
         if self.args.gpx or self.args.json or self.args.raw or self.args.print:
             if stat["slots_used"] > 0 or self.args.raw:
                 logger.info("Reading GPS log from handset")
-                raw_log_data = hx.gps.read_log(progress=True)
+                with ui.progress("Reading GPS log", "blocks") as progress:
+                    raw_log_data = hx.gps.read_log(progress=progress)
                 logger.info(f"Received {len(raw_log_data)} bytes of raw log data from handset")
             else:
                 logger.info("Nothing to read from handset")

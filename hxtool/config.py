@@ -1,6 +1,7 @@
 from logging import getLogger
 
 from .memory import unpack_waypoint
+from .progress import Progress
 from .protocol import GenericHXProtocol, ProtocolError
 
 logger = getLogger(__name__)
@@ -32,7 +33,6 @@ class GenericHXConfig:
 
     CHUNK_SIZE = 0x40  # bytes per transfer
     CONFIG_SIZE = 0x8000
-    PROGRESS_LOG_AT = 0x1000
 
     MMSI_OFFSET = 0x00b0  # 10 nibbles BCD, then the update counter byte
     ATIS_CODE_OFFSET = 0x00b6  # 10 nibbles BCD, then the update counter byte
@@ -68,17 +68,15 @@ class GenericHXConfig:
     def __init__(self, protocol: GenericHXProtocol):
         self.p = protocol
 
-    def config_read(self, progress=False):
+    def config_read(self, progress: Progress | None = None) -> bytes:
+        """Read the whole config memory; progress is called with (bytes done, bytes total)"""
         config_data = b''
-        bytes_to_go = self.CONFIG_SIZE
         for offset in range(0x0000, self.CONFIG_SIZE, self.CHUNK_SIZE):
             if progress:
-                percent_done = int(100.0 * offset / bytes_to_go)
-                if offset % self.PROGRESS_LOG_AT == 0:
-                    logger.info(f"{offset} / {bytes_to_go} bytes ({percent_done}%)")
+                progress(offset, self.CONFIG_SIZE)
             config_data += self.p.read_config_memory(offset, self.CHUNK_SIZE)
         if progress:
-            logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
+            progress(self.CONFIG_SIZE, self.CONFIG_SIZE)
         return config_data
 
     def magic_ranges(self):
@@ -101,12 +99,13 @@ class GenericHXConfig:
                 raise ProtocolError("Region mismatch")
             logger.warning("Ignoring region mismatch. Flashing anyway")
 
-    def config_write(self, data, force=False, write_flash_id=False, progress=False):
+    def config_write(self, data, force=False, write_flash_id=False, progress: Progress | None = None):
         """
         Write a config image to the device, leaving the device's identity alone:
         the magic is never written, the flash ID only with write_flash_id, and
         the model's other protected ranges only with force. force also turns
         the magic and region checks into warnings.
+        progress is called with (bytes done, bytes total).
         """
         self._config_write_precheck(data, force)
         skipped = self.magic_ranges()
@@ -116,16 +115,13 @@ class GenericHXConfig:
             logger.warning(f"Writing flash ID {self.flash_id()!r} -> {self._flash_id_of(data)!r}")
         if not force:
             skipped += self.PROTECTED_RANGES
-        bytes_to_go = self.CONFIG_SIZE
-        if progress:
-            logger.info(f"0 / {bytes_to_go} bytes (0%)")
         for offset in range(0, self.CONFIG_SIZE, self.CHUNK_SIZE):
-            if progress and offset > 0 and offset % self.PROGRESS_LOG_AT == 0:
-                logger.info(f"{offset} / {bytes_to_go} bytes ({int(100.0 * offset / bytes_to_go)}%)")
+            if progress:
+                progress(offset, self.CONFIG_SIZE)
             for start, end in _unprotected(offset, offset + self.CHUNK_SIZE, skipped):
                 self.p.write_config_memory(start, data[start:end])
         if progress:
-            logger.info(f"{bytes_to_go} / {bytes_to_go} bytes (100%)")
+            progress(self.CONFIG_SIZE, self.CONFIG_SIZE)
 
     def _flash_id_of(self, image) -> str:
         """The flash ID stored in a config image"""
@@ -278,7 +274,6 @@ class GX1400Config(GenericHXConfig):
 
     CHUNK_SIZE = 0x20
     CONFIG_SIZE = 0x2000
-    PROGRESS_LOG_AT = 0x0800
 
     MMSI_OFFSET = 0x0060
     ATIS_CODE_OFFSET = 0x0066
