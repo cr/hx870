@@ -5,7 +5,7 @@ from struct import pack
 from hxtool import config, locus
 from hxtool.cli.gpslog import to_hm
 from hxtool.main import main
-from hxtool.protocol import GenericHXProtocol, MediaTekProtocol
+from hxtool.protocol import GenericHXProtocol, GPSModuleSilent, MediaTekProtocol
 from hxtool.simulator import HXSimulator
 
 LOG_CONTENT = 0x7f  # UTC, fix type, latitude, longitude, height, speed, heading
@@ -183,19 +183,108 @@ def test_module_speed_is_restored_after_a_failed_transfer(kill_sims, monkeypatch
     assert sim.gps_baudrate == 9600
 
 
-@pytest.mark.parametrize("state, what", [
-    (115200, "a previous run died mid-transfer"),
-    (None, "the module was left deaf"),
-])
-def test_unresponsive_module_is_recovered(kill_sims, state, what):
+def lost_module(radio: int, module: int, **state):
+    """A simulator whose radio and GPS module are left at the given speeds, and a connection that gives up fast"""
     sim = HXSimulator(config.HX870Config, mode="CP", loop_delay=0.0005)
     sim.gps_log = SAMPLE_LOG
-    sim.gps_baudrate = state
+    sim.gps_radio_baudrate, sim.gps_baudrate = radio, module
+    for name, value in state.items():
+        setattr(sim, name, value)
     sim.start()
     gps = gps_of(sim)
+    gps.p.conn.s.timeout = 0.2  # every unanswered sync costs one timeout
+    return sim, gps
 
-    assert gps.read_log(fast=True) == SAMPLE_LOG, what
-    assert sim.gps_baudrate == 9600
+
+@pytest.mark.parametrize("radio, module, requested, what", [
+    (115200, 9600, [9600], "the radio's side was left at the high speed"),
+    (9600, 115200, [9600, 115200, 9600], "the module was left at the high speed"),
+    (9600, 38400, [9600, 115200, 57600, 38400, 9600], "the module sits at a speed the radio never looks for"),
+    (9600, 4800, [9600, 115200, 57600, 38400, 19200, 14400, 4800, 9600], "the last speed of the ladder"),
+])
+def test_lost_module_is_found_and_brought_back(kill_sims, radio, module, requested, what):
+    sim, gps = lost_module(radio, module)
+
+    assert gps.read_log() == SAMPLE_LOG, what
+    assert (sim.gps_radio_baudrate, sim.gps_baudrate) == (9600, 9600), "both ends at the speed the firmware expects"
+    assert sim.gps_baudrates == requested, "the two likely speeds first, then the rest, then back"
+
+
+def test_module_silenced_at_the_high_speed_is_recovered(kill_sims):
+    # A second switch to 115200 silences the module until it is switched to another speed
+    sim, gps = lost_module(115200, 115200, gps_stunned=True)
+
+    assert gps.read_log() == SAMPLE_LOG
+    assert (sim.gps_radio_baudrate, sim.gps_baudrate) == (9600, 9600)
+    assert sim.gps_baudrates == [9600]
+
+
+def test_module_left_at_the_high_speed_with_the_radio(kill_sims):
+    # A run that died mid-transfer: both ends talk at 115200, which the host cannot tell. A second
+    # switch to that speed silences the module, so the fast transfer fails
+    sim, gps = lost_module(115200, 115200)
+
+    with pytest.raises(TimeoutError):
+        gps.read_log(fast=True)
+    assert (sim.gps_radio_baudrate, sim.gps_baudrate) == (9600, 9600)
+    assert gps.read_log() == SAMPLE_LOG, "the module answers again at the default speed"
+
+
+def test_switch_back_survives_a_lost_command(kill_sims):
+    # The radio now and then cuts the end off its own switch command: the module then stays where it
+    # is and only executes the switch when the radio next talks to it at its speed
+    sim, gps = lost_module(9600, 38400, gps_cut_switches=1)
+
+    assert gps.read_log() == SAMPLE_LOG
+    assert (sim.gps_radio_baudrate, sim.gps_baudrate) == (9600, 9600)
+    assert sim.gps_baudrates == [9600, 115200, 57600, 38400, 9600, 38400, 9600]
+
+
+def test_dead_module_is_reported_and_the_radio_left_at_the_default_speed(kill_sims):
+    sim, gps = lost_module(9600, 9600, gps_dead=True)
+
+    with pytest.raises(GPSModuleSilent) as error:
+        gps.read_log()
+    assert error.value.log_data is None
+    assert sim.gps_baudrates == [9600, 115200, 57600, 38400, 19200, 14400, 4800, 9600], "every speed once"
+    assert sim.gps_radio_baudrate == 9600
+
+
+def test_failed_fast_transfer_fails_with_the_module_restored(kill_sims, monkeypatch):
+    sim, gps = lost_module(9600, 9600)
+    read_lines = MediaTekProtocol._read_log_lines
+
+    def no_header_at_the_high_speed(self, progress=None):
+        if sim.gps_radio_baudrate == 115200:
+            raise TimeoutError("no log header")
+        return read_lines(self, progress)
+
+    monkeypatch.setattr(MediaTekProtocol, "_read_log_lines", no_header_at_the_high_speed)
+    with pytest.raises(TimeoutError, match="no log header"):
+        gps.read_log(fast=True)
+    assert sim.gps_baudrates == [115200, 9600], "no second attempt, just back to the default speed"
+    assert (sim.gps_radio_baudrate, sim.gps_baudrate) == (9600, 9600)
+    assert gps.read_log() == SAMPLE_LOG, "where the module answers"
+
+
+@pytest.mark.parametrize("transfer_completes", [True, False])
+def test_module_silent_after_a_fast_transfer(kill_sims, monkeypatch, transfer_completes):
+    # Seen on both radios: after the transfer the module answers at no speed any more
+    sim, gps = lost_module(9600, 9600)
+    read_lines = MediaTekProtocol._read_log_lines
+
+    def then_silent(self, progress=None):
+        data = read_lines(self, progress)
+        sim.gps_dead = True
+        if not transfer_completes:
+            raise TimeoutError("log line missing")
+        return data
+
+    monkeypatch.setattr(MediaTekProtocol, "_read_log_lines", then_silent)
+    with pytest.raises(GPSModuleSilent) as error:
+        gps.read_log(fast=True)
+    assert error.value.log_data == (SAMPLE_LOG if transfer_completes else None), "a complete log is not thrown away"
+    assert sim.gps_radio_baudrate == 9600
 
 
 def test_module_is_left_alone_while_it_switches(kill_sims, monkeypatch):
@@ -210,24 +299,68 @@ def test_module_is_left_alone_while_it_switches(kill_sims, monkeypatch):
     assert gps.read_log(fast=True) == SAMPLE_LOG
 
 
-@pytest.mark.parametrize("selector, options, switched", [
-    (["-t", "0"], [], True),  # HX870: fast where the module takes it
-    (["-t", "0"], ["--slow"], False),
-    (["-m", "HX891", "-t", "0"], [], False),  # HX891BT: its module does not
-    (["-m", "HX891", "-t", "0"], ["--fast"], True),
-    (["-m", "HX890", "-t", "0"], [], False),  # HX890: taken to work like the HX891BT
+@pytest.fixture(name="sims")
+def fixture_started_simulators(monkeypatch, sims_with_log):
+    """The simulators a CLI run starts, for a look at them afterwards"""
+    started = []
+    sim_start = HXSimulator.start
+
+    def start_and_note(self):
+        started.append(self)
+        sim_start(self)
+
+    monkeypatch.setattr(HXSimulator, "start", start_and_note)
+    return started
+
+
+@pytest.mark.parametrize("selector, options, requested", [
+    (["-t", "0"], [], []),
+    (["-m", "HX891", "-t", "0"], [], []),
+    (["-m", "HX890", "-t", "0"], [], []),
+    (["-t", "0"], ["--fast"], [115200, 9600]),
 ])
-def test_gpslog_speed_by_model(tmpdir, kill_sims, monkeypatch, selector, options, switched):
-    switches = []
-    sim_stop = HXSimulator.stop
-
-    def stop_and_record(self):
-        switches.extend(self.gps_baudrates)
-        sim_stop(self)
-
-    monkeypatch.setattr(HXSimulator, "stop", stop_and_record)
+def test_gpslog_speed(tmpdir, kill_sims, sims, selector, options, requested):
     assert main(["--simulator"] + selector + ["gpslog", "--raw", str(tmpdir.join("log.raw"))] + options) == 0
-    assert switches == ([115200, 9600] if switched else [])
+    assert [rate for sim in sims for rate in sim.gps_baudrates] == requested, "9600 unless asked, on every model"
+
+
+def test_gpslog_fast_option_warns(capsys):
+    with pytest.raises(SystemExit):
+        main(["gpslog", "--help"])
+    assert "unstable" in " ".join(capsys.readouterr().out.split())
+
+
+def test_gpslog_failed_fast_transfer_is_an_error(tmpdir, kill_sims, sims, monkeypatch, capsys):
+    def no_header(self, progress=None):
+        raise TimeoutError("no log header")
+
+    monkeypatch.setattr(MediaTekProtocol, "_read_log_lines", no_header)
+    log_file = tmpdir.join("log.raw")
+    assert main(["--simulator", "-t", "0", "gpslog", "--fast", "--raw", str(log_file)]) != 0
+    assert not log_file.exists()
+    log = capsys.readouterr().err
+    assert "ERROR Fast log transfer failed (no log header)" in log
+    assert "without --fast" in log
+    assert all((sim.gps_radio_baudrate, sim.gps_baudrate) == (9600, 9600) for sim in sims), "left in a sane state"
+
+
+def test_gpslog_silent_module_keeps_the_log_and_says_what_to_do(tmpdir, kill_sims, sims, monkeypatch, capsys):
+    read_lines = MediaTekProtocol._read_log_lines
+
+    def then_silent(self, progress=None):
+        data = read_lines(self, progress)
+        for sim in sims:
+            sim.gps_dead = True
+        self.p.conn.s.timeout = 0.05  # every speed is tried twice
+        return data
+
+    monkeypatch.setattr(MediaTekProtocol, "_read_log_lines", then_silent)
+    log_file = tmpdir.join("log.raw")
+    assert main(["--simulator", "-t", "0", "gpslog", "--fast", "--erase", "--raw", str(log_file)]) != 0
+    assert log_file.read_binary() == SAMPLE_LOG, "the log was read completely before the module fell silent"
+    errors = [line for line in capsys.readouterr().err.splitlines() if " ERROR " in line]
+    assert any("off and on" in line and "CP mode" in line for line in errors), "an instruction, not just a timeout"
+    assert all(sim.gps_log == SAMPLE_LOG for sim in sims), "nothing is erased"
 
 
 @pytest.fixture(name="busy_sim")
@@ -256,24 +389,3 @@ def test_busy_gps_module_is_waited_for(busy_sim):
     gps = MediaTekProtocol(GenericHXProtocol(busy_sim.tty))
     assert gps.read_log() == SAMPLE_LOG
     assert busy_sim.gps_baudrates == [], "a module that is merely busy is not treated as deaf"
-
-
-def test_failed_fast_transfer_falls_back_to_the_default_speed(kill_sims, monkeypatch, caplog):
-    sim = HXSimulator(config.HX870Config, mode="CP", loop_delay=0.0005)
-    sim.gps_log = SAMPLE_LOG
-    sim.start()
-    gps = gps_of(sim)
-    read_lines = MediaTekProtocol._read_log_lines
-    attempts = []
-
-    def first_attempt_fails(self, progress=None):
-        attempts.append(sim.gps_baudrate)
-        if len(attempts) == 1:
-            raise TimeoutError("no log header")
-        return read_lines(self, progress)
-
-    monkeypatch.setattr(MediaTekProtocol, "_read_log_lines", first_attempt_fails)
-    assert gps.read_log(fast=True) == SAMPLE_LOG
-    assert attempts == [115200, 9600], "second attempt at the default speed"
-    assert sim.gps_baudrate == 9600
-    assert "default speed" in caplog.text

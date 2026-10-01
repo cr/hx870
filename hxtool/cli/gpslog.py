@@ -9,6 +9,7 @@ import hxtool
 from . import ui
 from .base import CliCommand
 from hxtool.locus import FixQuality, Locus, LocusError
+from hxtool.protocol import GPSModuleSilent, ProtocolError
 
 logger = getLogger(__name__)
 
@@ -38,13 +39,11 @@ class GpsLogCommand(CliCommand):
         parser.add_argument("-e", "--erase",
                             help="erase GPS log data from device",
                             action="store_true")
-        speed = parser.add_mutually_exclusive_group()
-        speed.add_argument("--fast",
-                           help="switch the GPS module to 115200 baud for the transfer (default where it is reliable)",
-                           action="store_true")
-        speed.add_argument("--slow",
-                           help="read the log at the GPS module's default speed",
-                           action="store_true")
+        parser.add_argument("--fast",
+                            help="read the log at 115200 instead of 9600 baud. Quicker, but unstable: the "
+                                 "transfer fails now and then, and the GPS module can end up silent until the "
+                                 "radio is restarted",
+                            action="store_true")
 
     def run(self):
 
@@ -60,13 +59,25 @@ class GpsLogCommand(CliCommand):
             logger.critical(f"GPS log functions are not supported by {hx.handle}")
             return 10
 
-        result = 0
+        try:
+            return self.gps_log(hx.gps)
+        except GPSModuleSilent as silent:
+            result = 10
+            if silent.log_data is not None:
+                logger.info(f"Received {len(silent.log_data)} bytes of raw log data from handset")
+                result = max(self.export(silent.log_data), result)
+            logger.critical(f"GPS module lost ({silent})")
+            logger.error("Switch the radio off and on again in CP mode, then run `hxtool gpslog` without --fast: "
+                         "it looks for the GPS module at every speed and brings it back to 9600 baud. "
+                         "Until that has worked the radio may not get a position fix.")
+            return result
 
-        hx.gps.ensure_ready()
-        hx.gps.send("$PMTK", ["605"])  # Query GPS module firmware version
-        _ = hx.gps.receive()
+    def gps_log(self, gps) -> int:
+        gps.ensure_ready()
+        gps.send("$PMTK", ["605"])  # Query GPS module firmware version
+        _ = gps.receive()
 
-        stat = hx.gps.read_log_status()
+        stat = gps.read_log_status()
         logger.info(f"Log size {stat['pages_used'] * 4}kB, "
                     f"{stat['slots_used']} trackpoints, "
                     f"{stat['usage_percent']}% full")
@@ -75,40 +86,43 @@ class GpsLogCommand(CliCommand):
         elif stat['usage_percent'] >= 80:
             logger.warning("Log is almost full. Consider erasing soon")
 
+        result = 0
         if self.args.gpx or self.args.json or self.args.raw or self.args.print:
             if stat["slots_used"] > 0 or self.args.raw:
                 logger.info("Reading GPS log from handset")
-                with ui.progress("Reading GPS log", "blocks") as progress:
-                    fast = self.args.fast or (hx.gps_fast_log and not self.args.slow)
-                    raw_log_data = hx.gps.read_log(progress=progress, fast=fast)
+                try:
+                    with ui.progress("Reading GPS log", "blocks") as progress:
+                        raw_log_data = gps.read_log(progress=progress, fast=self.args.fast)
+                except (TimeoutError, ProtocolError) as error:
+                    if not self.args.fast or isinstance(error, GPSModuleSilent):
+                        raise
+                    logger.error(f"Fast log transfer failed ({error}). The GPS module is back at 9600 baud "
+                                 "and answers. Run the command again, or without --fast")
+                    return 10
                 logger.info(f"Received {len(raw_log_data)} bytes of raw log data from handset")
+                result = self.export(raw_log_data)
             else:
                 logger.info("Nothing to read from handset")
-                raw_log_data = None
-        else:
-            raw_log_data = None
-
-        if raw_log_data is not None:
-
-            if self.args.print:
-                result = max(dump_log(raw_log_data), result)
-
-            if self.args.gpx:
-                logger.info("Exporting GPX log data to `%s`", self.args.gpx)
-                result = max(write_gpx(raw_log_data, self.args.gpx), result)
-
-            if self.args.json:
-                logger.info("Exporting JSON log data to `%s`", self.args.json)
-                result = max(write_json(raw_log_data, self.args.json), result)
-
-            if self.args.raw:
-                logger.info("Exporting raw log data to `%s`", self.args.raw)
-                result = max(write_raw(raw_log_data, self.args.raw), result)
 
         if self.args.erase:
             logger.info("Erasing GPS log data from device")
-            hx.gps.erase_log()
+            gps.erase_log()
 
+        return result
+
+    def export(self, raw_log_data: bytes) -> int:
+        result = 0
+        if self.args.print:
+            result = max(dump_log(raw_log_data), result)
+        if self.args.gpx:
+            logger.info("Exporting GPX log data to `%s`", self.args.gpx)
+            result = max(write_gpx(raw_log_data, self.args.gpx), result)
+        if self.args.json:
+            logger.info("Exporting JSON log data to `%s`", self.args.json)
+            result = max(write_json(raw_log_data, self.args.json), result)
+        if self.args.raw:
+            logger.info("Exporting raw log data to `%s`", self.args.raw)
+            result = max(write_raw(raw_log_data, self.args.raw), result)
         return result
 
 

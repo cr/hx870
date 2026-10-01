@@ -104,30 +104,116 @@ an HX870 (firmware 02.04) and an HX891BT (firmware 1.00):
 * The GPS log arrives at about 960 characters/s whatever the line coding: the GPS
   module's own UART runs at 9600 baud until it is switched with `$PMTK251`.
 
+### How the vendor software does it
+
+Read from the vendor's programming software: YCE03 1.0.0.24 and YCE15 2.0.1.0 for the
+HX870, YCE20 3.0.0.0 for the HX890 and HX891BT. They are builds of one C# code base, and
+their protocol code is the same except where noted.
+
+* Port: 115200 8N1, read and write timeout 2000 ms. DTR and RTS are left alone.
+* Every operation starts with `P`, `0`, `ACMD:002`, then `#CMDSY` twice. Config read and
+  write then ask for the firmware version (`#CVRRQ`); a version of `--.--` is refused.
+* A command is repeated up to 5 times, each with a 2000 ms wait for the reply
+  (`global.ini`: `Timeout`, `RetryCount`, `RetryInterval`).
+* `#CEPSR` is sent before every `#CEPRD` and `#CEPWR`. Any `#CEPSD` reply is answered with
+  `#CMDOK`; on `#CEPSD 01` the poll is repeated after 40, 80, 160, ... ms.
+* A `#CEPDT` reply must end in CR LF, have five fields and a correct checksum, else the
+  read is repeated. The receive code takes whatever one read from the port returns as one
+  message; it relies on the radio sending a message in one piece.
+* Config read: all of the memory in 0x40-byte chunks, or only the fields a function needs.
+* Config write: first the two magic bytes at offset 0 and at the end of the memory and
+  the region byte at 0x010F are read. The write is refused unless both magics match the
+  image. A differing region asks for confirmation; region 0xFF on either side is refused
+  (YCE20: 0x10 as well). Then the write areas are sent in 0x40-byte chunks. Nothing is
+  read back afterwards.
+* The write areas are tables embedded in the program, one for a full write and one per
+  function (set MMSI, set ATIS, the resets, clearing the DSC logs). Setting the MMSI
+  writes 0x00B0..0x00B5 and 0x00CE, setting the ATIS code 0x00B6..0x00BB and 0x00CF
+  (YCE03: without 0x00CE and 0x00CF).
+  Never written: the magics, 0x000F, the model names at 0x0078, 0x0088, 0x0098 and
+  0x00A8 (8 bytes each), the flash ID at 0x0100..0x010E, and 0x0280..0x02CF. YCE03 and
+  YCE20 leave out more, among it the MMSI and ATIS code in a full write.
+* GPS log transfer: `#CEPSR`, then `$PMTK251,115200`, a fixed wait of 3 seconds,
+  `$PMTK183` (repeated up to 5 times on a timeout or when `$PMTK010,002` arrives), then
+  `$PMTK622,1`. Data lines are checked by their checksum only; the header line is used
+  for the progress bar alone, line numbers are not compared, and the transfer ends with
+  `$PMTK001,622,3`. Five timeouts in a row end it with an error.
+* The speed is never switched back. The vendor leaves the module at 115200 and relies
+  on the radio finding it there at the next power-up.
+* GPS log erase: `$PMTK184,1` at 9600 baud, done when `$PMTK001,184,3` arrives.
+* A log record is 20 bytes: time (4, seconds since 1970), fix (1), latitude and longitude
+  (4 each, float), height (2, m), speed (2, taken as m/s), heading (2), checksum (1).
+  YCE20 exports GPX and maps the fix byte: bit 2 to `dgps`, bit 1 to `3d`, bit 6 to `2d`.
+
 ### GPS module speed
 
-`$PMTK251,115200` switches the GPS module to 115200 baud, and the log then arrives five to
-six times faster. `hxtool gpslog` does that where it is reliable (`--fast` and `--slow`
-override the model's default) and always switches back to 9600, which the radio's firmware
-expects. What the module needs:
+`$PMTK251,115200` switches the line between the radio and its GPS module to 115200 baud,
+and a log transfer then runs five to six times faster. `hxtool gpslog` reads at 9600 baud
+on every model. `--fast` switches up for the transfer and always back to 9600, which the
+radio's firmware expects, and checks that the module answers there. It is unstable for
+the reasons below: a failed fast transfer is an error and is not repeated at 9600, and if
+the module answers at no speed afterwards, `hxtool` says so, saves the log if it had been
+read completely, and asks for the radio to be restarted in CP mode.
 
-* The switch is not acknowledged. For about a second afterwards the module takes no
-  command, and a command sent in that time can leave it deaf.
-* At the high speed, replies to short commands like `$PMTK000` cannot be relied on; a log
-  dump comes through complete.
-* Switched to the speed it already has, the module goes deaf. Switching to 115200 and
-  back to 9600 brings a deaf module back.
+How the radio handles it, read from the HX870's firmware 02.03 and confirmed by
+measurement on 02.04:
+
+* The radio does not pass `$PMTK251` on. It accepts the speeds `0` (the module's default),
+  `4800`, `9600`, `14400`, `19200`, `38400`, `57600` and `115200` and then runs a sequence
+  of its own: an empty sentence to wake the module, a wait of up to half a second,
+  `PMTK251` at the old speed, its own UART to the new speed, `PMTK225,0` at the new speed,
+  and a wait of up to half a second for the acknowledgement.
+* While that sequence runs, about a second, every `$PMTK` sentence from the host is
+  dropped without a reply. The switch itself is not acknowledged either. A switch to 9600
+  while at 9600 does no harm (`$PMTK010,003` and `$PMTK001,225,3` show up); a switch to
+  115200 while at 115200 leaves the module silent until it is switched down (5 of 5).
+* The host cannot tell at which speed radio and module talk: as long as both agree,
+  everything works at either speed, only faster and with the losses described below.
+* All other `$PMTK` sentences are forwarded to the module with a freshly computed
+  checksum. In the other direction the radio forwards PMTK sentences only; the module's
+  position sentences are parsed by the radio itself, in CP mode too.
+* In CP mode the radio's UART clock is 18 MHz, so its "115200" is 112500 baud (2.3 % slow)
+  and its "9600" is 9534 baud. That is within what the link tolerates. In normal operation
+  the clock is 12 MHz and "115200" comes out as 125000 baud, 8.5 % fast, which a module at
+  115200 will not decode.
+* The module keeps its speed when the radio is switched off. When it starts, the radio
+  looks for the module at 115200 and 9600 only, and going by the code just read, only a
+  start into CP mode can reach a module at 115200 (not tried). A module left at another
+  speed is lost to the radio (no position fix) until the radio's side is stepped to that
+  speed. `hxtool` does that whenever the module does not answer: it tries 9600 and
+  115200, then 57600, 38400, 19200, 14400 and 4800, and switches a module it finds back
+  to 9600.
+
+What goes wrong at the high speed (HX870, several hundred switches):
+
+* After one switch in five to twelve, depending on what the module is sending at the
+  time, the module is deaf. The firmware switches its transmitter off one character too
+  early when its task timer happens to fall into that millisecond, which cuts the line
+  feed off its own `PMTK251`. The module then stays at the old speed and only executes the
+  command when the next complete sentence arrives. Repeating the request does not help.
+  Switching down and up again does: the dump then works at the high speed (11 of 11).
+  Switching down, up and down brings both back to 9600.
+* The first line of the dump, `$PMTKLOX,0,<lines>`, gets lost in up to one transfer in
+  six. The radio has room for one received sentence at a time and drops the next one if
+  its main loop has not taken the first yet. At 115200 the short header is dropped when
+  it directly follows one of the module's position sentences. The data lines are long
+  enough to get through; none was lost in about 400 transfers. For the same reason the
+  reply to a short command like `$PMTK000` cannot be relied on at the high speed.
+* After a complete fast transfer, the switch back to 9600 can leave the module silent for
+  good: no speed brings an answer any more. Seen once on the HX870 (after about 450 pairs
+  of switches; switching the radio off and on cured it) and once on the HX891BT (after
+  its fourth fast transfer). Not understood. The vendor's software never switches back.
 * The module cannot be stopped in the middle of a log dump: after an interrupted read it
   goes on sending for the rest of the dump (ten seconds per 4 kB sector at 9600 baud).
   Its output shares the line with the replies to `#` commands, so `hxtool` skips GPS
   sentences while it waits for such a reply, recognises CP mode although sentences stream
   in, and waits for a busy module instead of treating it as deaf.
-* HX870: about one switch in fifteen leaves the module deaf (16 of 195), and repeating
-  the request or the switch does not wake it. Now and then a line of the dump is lost.
-  In both cases `hxtool` restores the speed and reads at 9600. HX891BT, and by assumption
-  the HX890: a switch restarts the module (`$PMTK011,MTKGPS`), upon which
-  the radio's firmware re-initializes it (`$PMTK225` and friends, baud rate included), so
-  the transfer fails as often as not. That is where the stray `$PMTK001,225,3` comes from.
+
+HX891BT (firmware 1.00), and by assumption the HX890: the same failures, more often. After
+a switch the module also reports a restart now and then (`$PMTK011,MTKGPS`). Not analysed;
+the HX870's firmware restarts the module by itself when it receives a sentence with an
+overlong field, which a speed mismatch can produce. The vendor's software reckons with a
+restart: `$PMTK010,002` makes it repeat its request.
 
 ### #CMD message format
 
@@ -170,7 +256,9 @@ Radio starts repeating messages if you don't acknowledge with #CMDOK or similar,
   the right one with `#CFLSD 00`. The flasher follows every command with a `;` byte.
 * `#CFLMC 01` - CommandMd, sent by firmware flasher before #CFLER
 * `#CFLMC 03` - CommandMdr, sent by firmware flasher after last #CFLWR
-* `#CFLRD` - Appears in firmware 02.03, perhaps firmware flash read? Radio says #CMDUN
+* `#CFLRR ADDRESS6 LENGTH` - Read from firmware flash, answered with `#CFLRD`. The vendor's updater
+  can build the request and parse the reply but never sends it. Untested.
+* `#CFLRD` - Reply to `#CFLRR`. As a command the radio says #CMDUN
 * `#CFLSD 10` - Radio status response observed during hardware detection
 * `#CFLSR 00` - CheckStatus
 * `#CFLWR ADDRESS6 LENGTH <HEXBYTES>` - Write to firmware flash
@@ -191,6 +279,26 @@ Radio starts repeating messages if you don't acknowledge with #CMDOK or similar,
 * `#CVRDQ 02.03` - Reply with firmware version
 * `#CVRRQ` - Radio replies with firmware version in #CVRDQ message
 
+
+### Firmware update sequence
+
+Read from the vendor's updater for the HX870 (a .NET program, versions 02.03 and 02.04).
+Not exercised with `hxtool`.
+
+1. `P`, `0`, `ACMD:002`, `#CVRRQ` to show the installed version.
+2. `#CMDNR STANDARD HORIZON`, answered with `#CMDND`.
+3. `#CFLID AM057N` (padded to ten bytes with NUL); if that is refused, a pause of a
+   second, `#CMDNR` again and `#CFLID AM057N2`.
+4. A pause, `#CFLMC 01`, then `#CMDSY` twice.
+5. `#CFLER 000000` (erase), `#CFLCB 000000` (blank check).
+6. The image for 0xF40000..0xFEFFFF in chunks of 0x80 bytes: `#CFLSR 00` until
+   `#CFLSD 00`, then `#CFLWR ADDRESS6 80 <HEXBYTES>`, answered with `#CMDOK`.
+7. A pause, `#CFLMC 03`.
+
+Each of the commands from step 2 on is followed by a `;` byte. Timeout 2000 ms, five
+attempts per command. The updater carries the image as S-records with six hex digits
+swapped; `tools/fwextract.py` reads it out. The updater for the HX890 is a different,
+native program and holds its image encrypted.
 
 ### NMEA-style messages
 
@@ -271,6 +379,10 @@ After a full reboot, those values are replaced by all FF.
 `tools/convert.py` turns a USB capture (pcap) of the vendor software talking to a radio
 into the protocol dialogue (`print`) or the memory image it transferred (`dump`). It
 needs Wireshark's `tshark`.
+
+`tools/fwextract.py UPDATER.exe IMAGE.bin` extracts the firmware image from one of the
+vendor's firmware updaters for the HX870. Its output for version 02.03 is identical to
+the image the updater sends to the radio.
 
 ## Testing notes
 

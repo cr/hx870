@@ -88,16 +88,25 @@ class HXSimulator(Thread):
         self.received = Counter()
         # Raw content of the GPS logger flash, a multiple of 4k sectors
         self.gps_log = b""
-        # The GPS module's UART speed (None: out of step with the radio, deaf) and the speeds
-        # it was switched to. Modelled on an HX870 and an HX891BT:
-        # - the radio's firmware expects 9600;
-        # - at the high speed, replies to PMTK000 cannot be relied on (never sent here),
-        #   while a log dump comes through;
-        # - a switch is not acknowledged, and for gps_settle seconds after it the module
-        #   takes no command;
-        # - switched to the speed it already has, the module goes deaf; only a switch to
-        #   the high speed brings it back.
+        # The speed of the GPS module's UART and of the radio's side of that line, and the
+        # speeds the host asked for. Modelled on the HX870's firmware (see the README, "GPS
+        # module speed"):
+        # - the radio does not pass a speed switch on. It sends its own command at the old
+        #   speed and then moves its side; the module only follows when both agreed before;
+        # - for gps_settle seconds after a switch the radio drops every GPS command;
+        # - the module answers only while both ends agree, at whatever speed that is;
+        # - a switch to 115200 while at 115200 silences the module (gps_stunned) until it
+        #   is switched to another speed;
+        # - now and then the radio cuts the end off its own command (the next
+        #   gps_cut_switches switches): the module then stays where it is and executes the
+        #   switch when the radio next talks to it at its speed;
+        # - gps_dead: a module that never answers.
         self.gps_baudrate = 9600
+        self.gps_radio_baudrate = 9600
+        self.gps_stunned = False
+        self.gps_cut_switches = 0
+        self.gps_dead = False
+        self._gps_pending_switch = None
         self.gps_baudrates = []
         self.gps_settle = 0.05
         self._gps_switched_at = 0.0
@@ -264,17 +273,22 @@ class HXSimulator(Thread):
     def _gps_command(self, msg):
         match msg.args:
             case ["251", rate]:
-                self.gps_baudrates.append(int(rate))
+                rate = int(rate)
+                self.gps_baudrates.append(rate)
                 self._gps_switched_at = time()
-                if self.gps_baudrate is None:
-                    self.gps_baudrate = 115200 if int(rate) == 115200 else None
-                elif int(rate) == self.gps_baudrate:
-                    self.gps_baudrate = None
-                else:
-                    self.gps_baudrate = int(rate)
-            case _ if self.gps_baudrate is None:
-                pass
-            case ["000"] if self.gps_baudrate != 9600:
+                if self.gps_radio_baudrate == self.gps_baudrate:  # the module hears the command
+                    if self.gps_cut_switches > 0:
+                        self.gps_cut_switches -= 1
+                        self._gps_pending_switch = rate
+                    elif rate == self.gps_baudrate:
+                        self.gps_stunned = rate == 115200
+                    else:
+                        self.gps_baudrate, self.gps_stunned = rate, False
+                self.gps_radio_baudrate = rate
+                # The radio's own next sentence, at the new speed, completes a cut command
+                if self._gps_pending_switch is not None and self.gps_radio_baudrate == self.gps_baudrate:
+                    self.gps_baudrate, self._gps_pending_switch = self._gps_pending_switch, None
+            case _ if self.gps_dead or self.gps_stunned or self.gps_radio_baudrate != self.gps_baudrate:
                 pass
             case ["000"]:
                 self._reply("$PMTK", ["001", "0", "3"])

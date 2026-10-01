@@ -16,6 +16,12 @@ class InternalError(Exception):
     pass
 
 
+class GPSModuleSilent(TimeoutError):
+    """The GPS module answers at none of the speeds the radio can be switched to"""
+
+    log_data: bytes | None = None  # the log, if it had been read completely before
+
+
 class Message:
     """
     Generic HX Message Object
@@ -403,39 +409,64 @@ class MediaTekProtocol:
     # expects outside of a log transfer, and what limits a transfer to about 960 characters
     # per second. At 115200 baud the log arrives five to six times faster.
     #
-    # What the module needs, measured on an HX870 and an HX891BT with the port opened as
-    # the vendor software does (115200 baud line coding, DTR low):
-    # - A switch is not acknowledged. For about a second after it the module takes no
-    #   command, and a command sent in that time can leave it deaf.
-    # - At the high speed, replies to short commands like the sync cannot be relied on;
-    #   a log dump comes through complete.
-    # - Switched to the speed it already has, the module goes deaf. Switching to the high
-    #   speed and back brings a deaf module back.
+    # The radio does not pass $PMTK251 on but runs a switch sequence of its own, about a
+    # second long, during which it drops every $PMTK sentence from the host. On the HX870:
+    # - The switch is not acknowledged. After one in five to twelve the module is deaf:
+    #   the firmware cuts the line feed off its own switch command, and the module only
+    #   executes it when the next complete sentence arrives. Switching down, up and down
+    #   again brings both back to the default speed.
+    # - At the high speed a short sentence that directly follows another one is dropped by
+    #   the radio: the dump's header line now and then, replies to the sync often. The
+    #   dump's data lines come through.
+    # - A switch to 9600 at 9600 does no harm; a switch to 115200 at 115200 leaves the
+    #   module silent until it is switched down.
+    # - The module keeps its speed when the radio is switched off, and the radio only
+    #   looks for it at these two speeds. Another speed is only ever requested to find a
+    #   module that answers at neither (ensure_ready).
+    # Details in the README, "GPS module speed".
     DEFAULT_BAUDRATE = 9600
     FAST_BAUDRATE = 115200
-    SWITCH_SETTLE = 1.5  # seconds to leave the module alone after a switch
+    # Every speed the radio accepts: the two it looks for itself first, then the rest
+    SPEEDS = (9600, 115200, 57600, 38400, 19200, 14400, 4800)
+    SWITCH_SETTLE = 1.5  # seconds; the radio's switch sequence takes up to 1.1
 
     def set_baudrate(self, rate: int):
-        """Switch the GPS module's speed. Only call this when its current speed is the other one."""
+        """Ask the radio to switch the GPS module's speed and wait for its switch sequence to end."""
         self.send("$PMTK", ["251", str(rate)])
         sleep(self.SWITCH_SETTLE)
         self.p.conn.flush_input(expected=True)  # the module may send a system message
 
     def ensure_ready(self):
         """
-        Make sure the GPS module answers at its default speed. It does not when an earlier
-        transfer was cut short at the high speed, or when it was left deaf. A module that is
-        merely busy, sending the rest of a log dump nobody reads any more, is waited for.
+        Make sure the GPS module answers, at its default speed if it had to be looked for.
+        A module that is merely busy, sending the rest of a log dump nobody reads any more,
+        is waited for. A silent one is looked for at every speed the radio can be switched
+        to, the likely ones first, and brought back to the default speed. That also finds
+        a module the radio itself has lost: it only looks at the first two when it starts.
         """
         if self._sync_when_idle():
             return
-        logger.warning("GPS module does not answer, restoring its speed")
-        self.set_baudrate(self.DEFAULT_BAUDRATE)  # from the high speed
-        if self._sync_when_idle():
+        logger.warning("GPS module does not answer, looking for it")
+        for rate in self.SPEEDS:
+            self.set_baudrate(rate)
+            if not self._answers():
+                continue
+            if rate != self.DEFAULT_BAUDRATE:
+                logger.warning(f"GPS module found at {rate} baud, switching it back to {self.DEFAULT_BAUDRATE}")
+                self.set_baudrate(self.DEFAULT_BAUDRATE)
+                if not self._answers():
+                    # The radio cut its own command short. The module executes it as soon
+                    # as the radio talks to it at its speed again.
+                    self.set_baudrate(rate)
+                    self.set_baudrate(self.DEFAULT_BAUDRATE)
+                    self.sync()
             return
-        self.set_baudrate(self.FAST_BAUDRATE)  # from deaf
-        self.set_baudrate(self.DEFAULT_BAUDRATE)
-        self.sync()
+        self.set_baudrate(self.DEFAULT_BAUDRATE)  # where the radio's firmware expects its side
+        raise GPSModuleSilent("GPS module does not answer at any speed")
+
+    def _answers(self, attempts=2) -> bool:
+        """Sync, more than once: above the default speed the radio now and then drops the reply"""
+        return any(self._sync_when_idle() for _ in range(attempts))
 
     def _sync_when_idle(self, patience=180) -> bool:
         """
@@ -501,23 +532,27 @@ class MediaTekProtocol:
     def read_log(self, progress: Progress | None = None, fast: bool = False) -> bytes:
         """
         Read the raw GPS log; progress is called with (lines received, lines total).
-        With fast, the module is switched to the high speed for the transfer and always
-        switched back afterwards, also when the transfer fails or is interrupted. Not
-        every model's module takes that well, see the device classes' gps_fast_log.
+        With fast, the module is switched to the high speed for the transfer. That is quicker
+        and unstable: the transfer fails now and then, and it is not repeated. Whatever
+        happens, also on an interrupt, the module is switched back afterwards and checked
+        to answer; if it has fallen silent for good, GPSModuleSilent carries the log that
+        was read, if it was read completely.
         """
         self.ensure_ready()
         if not fast:
             return self._read_log_lines(progress)
+        log_data = None
         self.set_baudrate(self.FAST_BAUDRATE)
         try:
-            return self._read_log_lines(progress)
-        except (TimeoutError, ProtocolError) as e:
-            # Now and then the module is deaf after the switch, or drops a line
-            logger.warning(f"Fast log transfer failed ({e}), reading at the default speed")
+            log_data = self._read_log_lines(progress)
+            return log_data
         finally:
             self.set_baudrate(self.DEFAULT_BAUDRATE)
-            self.ensure_ready()
-        return self._read_log_lines(progress)
+            try:
+                self.ensure_ready()
+            except GPSModuleSilent as silent:
+                silent.log_data = log_data
+                raise
 
     def _read_log_lines(self, progress: Progress | None = None) -> bytes:
         raw_log_data = b''
