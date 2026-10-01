@@ -228,3 +228,52 @@ def test_gpslog_speed_by_model(tmpdir, kill_sims, monkeypatch, selector, options
     monkeypatch.setattr(HXSimulator, "stop", stop_and_record)
     assert main(["--simulator"] + selector + ["gpslog", "--raw", str(tmpdir.join("log.raw"))] + options) == 0
     assert switches == ([115200, 9600] if switched else [])
+
+
+@pytest.fixture(name="busy_sim")
+def fixture_simulator_with_abandoned_dump(kill_sims):
+    """A radio whose GPS module is in the middle of a log dump that nobody is reading any more,
+    as after Ctrl-C on a slow transfer: it streams for another four seconds"""
+    sim = HXSimulator(config.HX870Config, mode="CP", loop_delay=0.0005)
+    sim.gps_log = SAMPLE_LOG
+    sim.gps_line_delay = 0.1
+    sim.start()
+    abandoned = GenericHXProtocol(sim.tty)
+    abandoned.send("$PMTK", ["622", "1"])
+    assert abandoned.receive(nmea=True).args[:2] == ["LOX", "0"], "the dump has started"
+    abandoned.conn.s.close()
+    yield sim
+
+
+def test_connection_copes_with_a_streaming_gps_module(busy_sim):
+    p = GenericHXProtocol(busy_sim.tty)
+    assert (p.cp_mode, p.nmea_mode) == (True, False), "CP mode is recognised although GPS sentences stream in"
+    assert p.read_config_memory(0x0100, 6) == b"AM057N", "and config memory is read past them"
+    assert p.get_firmware_version() == "23.42"
+
+
+def test_busy_gps_module_is_waited_for(busy_sim):
+    gps = MediaTekProtocol(GenericHXProtocol(busy_sim.tty))
+    assert gps.read_log() == SAMPLE_LOG
+    assert busy_sim.gps_baudrates == [], "a module that is merely busy is not treated as deaf"
+
+
+def test_failed_fast_transfer_falls_back_to_the_default_speed(kill_sims, monkeypatch, caplog):
+    sim = HXSimulator(config.HX870Config, mode="CP", loop_delay=0.0005)
+    sim.gps_log = SAMPLE_LOG
+    sim.start()
+    gps = gps_of(sim)
+    read_lines = MediaTekProtocol._read_log_lines
+    attempts = []
+
+    def first_attempt_fails(self, progress=None):
+        attempts.append(sim.gps_baudrate)
+        if len(attempts) == 1:
+            raise TimeoutError("no log header")
+        return read_lines(self, progress)
+
+    monkeypatch.setattr(MediaTekProtocol, "_read_log_lines", first_attempt_fails)
+    assert gps.read_log(fast=True) == SAMPLE_LOG
+    assert attempts == [115200, 9600], "second attempt at the default speed"
+    assert sim.gps_baudrate == 9600
+    assert "default speed" in caplog.text

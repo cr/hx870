@@ -117,7 +117,15 @@ expects. What the module needs:
   dump comes through complete.
 * Switched to the speed it already has, the module goes deaf. Switching to 115200 and
   back to 9600 brings a deaf module back.
-* HX870: reliable. HX891BT, and by assumption the HX890: a switch restarts the module (`$PMTK011,MTKGPS`), upon which
+* The module cannot be stopped in the middle of a log dump: after an interrupted read it
+  goes on sending for the rest of the dump (ten seconds per 4 kB sector at 9600 baud).
+  Its output shares the line with the replies to `#` commands, so `hxtool` skips GPS
+  sentences while it waits for such a reply, recognises CP mode although sentences stream
+  in, and waits for a busy module instead of treating it as deaf.
+* HX870: about one switch in fifteen leaves the module deaf (16 of 195), and repeating
+  the request or the switch does not wake it. Now and then a line of the dump is lost.
+  In both cases `hxtool` restores the speed and reads at 9600. HX891BT, and by assumption
+  the HX890: a switch restarts the module (`$PMTK011,MTKGPS`), upon which
   the radio's firmware re-initializes it (`$PMTK225` and friends, baud rate included), so
   the transfer fails as often as not. That is where the stray `$PMTK001,225,3` comes from.
 

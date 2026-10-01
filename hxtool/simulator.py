@@ -101,6 +101,11 @@ class HXSimulator(Thread):
         self.gps_baudrates = []
         self.gps_settle = 0.05
         self._gps_switched_at = 0.0
+        # Seconds per line of a log dump at the default speed (a real dump of one 4k sector
+        # takes ten seconds, and the module is busy until it is through)
+        self.gps_line_delay = 0.0
+        self._gps_busy_until = 0.0  # the module is in the middle of a paced dump
+        self._gps_pending = []  # (due time, what to do then), in order
 
     def run(self):
         if self.stop_running.is_set():
@@ -208,6 +213,9 @@ class HXSimulator(Thread):
                 else:
                     # Ignore all other bytes outside of messages
                     logger.debug(f"CP simulator ignoring unexpected input {b}")
+            # What the GPS module has to say by now
+            while self._gps_pending and self._gps_pending[0][0] <= time():
+                self._gps_pending.pop(0)[1]()
 
         logger.debug("CP simulator thread finished")
 
@@ -247,6 +255,13 @@ class HXSimulator(Thread):
         if time() - self._gps_switched_at < self.gps_settle:
             logger.debug("CP simulator: GPS module is still switching speed, command lost")
             return
+        if time() < self._gps_busy_until:
+            # The module takes the command when it is through with its dump
+            self._gps_pending.append((self._gps_busy_until, lambda: self._gps_command(msg)))
+            return
+        self._gps_command(msg)
+
+    def _gps_command(self, msg):
         match msg.args:
             case ["251", rate]:
                 self.gps_baudrates.append(int(rate))
@@ -279,12 +294,20 @@ class HXSimulator(Thread):
             case ["622", *_]:
                 # Dump the log as lines of up to 24 words of 4 bytes each
                 lines = [self.gps_log[i:i + 96] for i in range(0, len(self.gps_log), 96)]
-                self._reply("$PMTK", ["LOX", "0", str(len(lines))])
+                replies = [["LOX", "0", str(len(lines))]]
                 for number, line in enumerate(lines):
                     words = [line[i:i + 4].hex().upper() for i in range(0, len(line), 4)]
-                    self._reply("$PMTK", ["LOX", "1", str(number)] + words)
-                self._reply("$PMTK", ["LOX", "2"])
-                self._reply("$PMTK", ["001", "622", "3"])
+                    replies.append(["LOX", "1", str(number)] + words)
+                replies += [["LOX", "2"], ["001", "622", "3"]]
+                delay = self.gps_line_delay if self.gps_baudrate == 9600 else 0.0
+                if delay == 0.0:
+                    for reply in replies:
+                        self._reply("$PMTK", reply)
+                else:
+                    start = time()
+                    for n, reply in enumerate(replies):
+                        self._gps_pending.append((start + n * delay, lambda reply=reply: self._reply("$PMTK", reply)))
+                    self._gps_busy_until = start + len(replies) * delay
             case ["184", *_]:
                 self.gps_log = b""
                 self._reply("$PMTK", ["001", "184", "3"])

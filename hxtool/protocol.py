@@ -192,14 +192,20 @@ class GenericHXProtocol:
 
         self.conn.write(b"P?")
         received = b""
+        sentence_seen = None
         deadline = time() + self.conn.default_timeout
         while time() < deadline:
             try:
                 received += self.conn.read(1)
             except TimeoutError:
                 break
-            if b"@" in received or b"$" in received:
+            if b"@" in received:
                 break
+            if b"$" in received and sentence_seen is None:
+                # GPS output. In NMEA mode that is all there is; in CP mode the module may be
+                # streaming too, and the answer to "?" is still to come.
+                sentence_seen = time()
+                deadline = min(deadline, sentence_seen + 0.5)
 
         if b"@" in received:
             logger.debug("Response like HX hardware in CP mode")
@@ -238,12 +244,20 @@ class GenericHXProtocol:
     def send(self, message_type, args=None):
         self.write(Message(message_type, args))
 
-    def receive(self, ignore_full_stop=True, ignore_text_messages=True, ignore_system_messages=True):
+    def receive(self, ignore_full_stop=True, ignore_text_messages=True, ignore_system_messages=True, nmea=False):
         # GPS module starts sputtering "FULL_STOP" log messages in comms when log is full.
         # Some firmware versions seem to restart the GPS module at unexpected moments, resulting
         # in spurious system and text messages. These are also ignored per default.
+        # The GPS module's output arrives on the same line as the replies to commands. Unless
+        # a GPS sentence is what the caller waits for (nmea), sentences are skipped, as is
+        # the tail of a sentence that was already under way when the port was opened.
         while True:
-            m = Message(parse=self.read_line())
+            line = self.read_line()
+            if not line.startswith(b"#") and (not nmea or not line.startswith(b"$")) \
+                    and (line.startswith(b"$") or b"*" in line):
+                logger.debug(f"Skipping GPS output {line!r}")
+                continue
+            m = Message(parse=line)
             if not m.validate():
                 raise ProtocolError(f"Checksum mismatch in message from device: {str(m).strip()}")
             if ignore_full_stop and m.type == "$PMTK" and m.args == ["LOG", "FULL_STOP"]:
@@ -370,7 +384,7 @@ class MediaTekProtocol:
         return self.p.send(*args, **kwargs)
 
     def receive(self, *args, **kwargs):
-        return self.p.receive(*args, **kwargs)
+        return self.p.receive(*args, nmea=True, **kwargs)
 
     def sync(self, timeout=5):
         timeout_time = time() + timeout
@@ -378,7 +392,7 @@ class MediaTekProtocol:
             self.p.send("$PMTK", ["000"])
             while time() < timeout_time:
                 try:
-                    r = self.p.receive()
+                    r = self.receive()
                 except TimeoutError:
                     break
                 if r.type == "$PMTK" and r.args == ["001", "0", "3"]:
@@ -410,20 +424,43 @@ class MediaTekProtocol:
     def ensure_ready(self):
         """
         Make sure the GPS module answers at its default speed. It does not when an earlier
-        transfer was cut short at the high speed, or when it was left deaf.
+        transfer was cut short at the high speed, or when it was left deaf. A module that is
+        merely busy, sending the rest of a log dump nobody reads any more, is waited for.
         """
-        try:
-            return self.sync(timeout=2.5)
-        except TimeoutError:
-            logger.warning("GPS module does not answer, restoring its speed")
+        if self._sync_when_idle():
+            return
+        logger.warning("GPS module does not answer, restoring its speed")
         self.set_baudrate(self.DEFAULT_BAUDRATE)  # from the high speed
-        try:
-            return self.sync(timeout=2.5)
-        except TimeoutError:
-            pass
+        if self._sync_when_idle():
+            return
         self.set_baudrate(self.FAST_BAUDRATE)  # from deaf
         self.set_baudrate(self.DEFAULT_BAUDRATE)
         self.sync()
+
+    def _sync_when_idle(self, patience=180) -> bool:
+        """
+        Sync with the module. As long as it is heard sending something else, keep listening
+        and try again once it falls silent. False if nothing is heard from it at all.
+        """
+        give_up = time() + patience
+        while time() < give_up:
+            self.send("$PMTK", ["000"])
+            heard = False
+            while True:
+                try:
+                    r = self.receive()
+                except TimeoutError:
+                    break
+                except ProtocolError:
+                    heard = True
+                    continue
+                if r.type == "$PMTK" and r.args == ["001", "0", "3"]:
+                    return True
+                heard = True
+            if not heard:
+                return False
+            logger.debug("GPS module was busy, syncing again")
+        return False
 
     def read_log_status(self) -> dict:
 
@@ -474,9 +511,13 @@ class MediaTekProtocol:
         self.set_baudrate(self.FAST_BAUDRATE)
         try:
             return self._read_log_lines(progress)
+        except (TimeoutError, ProtocolError) as e:
+            # Now and then the module is deaf after the switch, or drops a line
+            logger.warning(f"Fast log transfer failed ({e}), reading at the default speed")
         finally:
             self.set_baudrate(self.DEFAULT_BAUDRATE)
             self.ensure_ready()
+        return self._read_log_lines(progress)
 
     def _read_log_lines(self, progress: Progress | None = None) -> bytes:
         raw_log_data = b''
